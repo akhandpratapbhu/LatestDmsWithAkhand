@@ -74,7 +74,7 @@ Agar koi `feature/xyz` → `main` PR banaye → check ❌ → merge nahi hoga.
 > Pehli baar checks list me dikhne ke liye ek PR chalana pad sakta hai. Agar naam search me na aaye, pehle koi test PR open karke CI run karo, phir rule me checks select karo.
 
 ---
-
+////block any branch to direct merge in main branch only develop do this.
 ## Daily commands
 
 ```bash
