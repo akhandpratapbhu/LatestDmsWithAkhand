@@ -39,7 +39,7 @@ jobs:
       web_image: ${{ steps.meta-web.outputs.tags }}
       version: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Resolve version & image prefix
         id: meta
