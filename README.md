@@ -1,6 +1,6 @@
 # Fullcursor DMS
 
-Monorepo Document Management System — **Phase 0–3** complete (foundation, auth, multi-tenant org, user management).
+Monorepo Document Management System — **Phase 0–5** (foundation, auth, org, users, IAM, dashboards).
 
 ## Stack
 

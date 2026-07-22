@@ -1,10 +1,12 @@
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../features/auth/auth-context';
 import { useOrg } from '../features/org/org-context';
+import { useIam } from '../features/iam/iam-context';
 
 export function AppShell() {
   const { user, logout } = useAuth();
   const { organizations, currentOrg, selectOrg } = useOrg();
+  const { sidebar, loading } = useIam();
 
   return (
     <div className="app-shell">
@@ -26,13 +28,28 @@ export function AppShell() {
           </select>
         )}
         <nav>
-          <NavLink to="/app" end>
-            Overview
-          </NavLink>
-          <NavLink to="/app/organization">Organization</NavLink>
-          <NavLink to="/app/users">Users</NavLink>
-          <NavLink to="/app/profile">Profile</NavLink>
-          <NavLink to="/app/sessions">Sessions</NavLink>
+          {loading && <p className="muted tiny">Loading menus…</p>}
+          {!loading &&
+            sidebar?.groups.map((group) => (
+              <div key={group.id} className="nav-group">
+                <p className="nav-group-label">{group.name}</p>
+                {group.menus.map((menu) =>
+                  menu.path ? (
+                    <NavLink key={menu.id} to={menu.path} end={menu.path === '/app'}>
+                      {menu.label}
+                    </NavLink>
+                  ) : null,
+                )}
+              </div>
+            ))}
+          {!loading && !sidebar?.groups.length && (
+            <>
+              <NavLink to="/app" end>
+                Overview
+              </NavLink>
+              <NavLink to="/app/profile">Profile</NavLink>
+            </>
+          )}
         </nav>
         <div className="sidebar-foot">
           <p className="user-chip">

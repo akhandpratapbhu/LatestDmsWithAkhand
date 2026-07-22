@@ -165,3 +165,52 @@ export type OrgUserDto = {
   costCenterId: string | null;
   joinedAt: string;
 };
+
+export type PermissionType = 'SCREEN' | 'API' | 'DATA' | 'MENU';
+export type WidgetType = 'CHART' | 'CARD' | 'TABLE' | 'TEXT';
+
+export type SidebarMenuDto = {
+  id: string;
+  label: string;
+  path: string | null;
+  icon: string | null;
+  sortOrder: number;
+  children: SidebarMenuDto[];
+};
+
+export type SidebarGroupDto = {
+  id: string;
+  name: string;
+  code: string;
+  sortOrder: number;
+  menus: SidebarMenuDto[];
+};
+
+export type SidebarResponse = {
+  groups: SidebarGroupDto[];
+  permissions: string[];
+  landingPath: string;
+};
+
+export type DashboardWidgetDto = {
+  id: string;
+  type: WidgetType;
+  title: string;
+  config: Record<string, unknown>;
+  sortOrder: number;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+};
+
+export type DashboardDto = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  roleId: string | null;
+  isDefault: boolean;
+  isLanding: boolean;
+  widgets: DashboardWidgetDto[];
+};
