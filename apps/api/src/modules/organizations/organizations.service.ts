@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import {
   Branch,
   CostCenter,
@@ -18,10 +18,15 @@ import {
   TeamDto,
 } from '@dms/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { IamSeedService } from '../iam/iam-seed.service';
 
 @Injectable()
 export class OrganizationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => IamSeedService))
+    private readonly iamSeed: IamSeedService,
+  ) {}
 
   toOrg(o: Organization): OrganizationDto {
     return {
@@ -139,9 +144,16 @@ export class OrganizationsService {
           },
           passwordPolicy: { create: {} },
         },
+        include: { members: true },
       });
       return created;
     });
+
+    const ownerMember = org.members[0];
+    if (ownerMember) {
+      await this.iamSeed.seedOrganization(org.id, ownerMember.id);
+    }
+
     return this.toOrg(org);
   }
 

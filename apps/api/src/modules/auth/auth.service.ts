@@ -21,6 +21,7 @@ import {
   VerifyEmailDto,
   VerifyOtpDto,
 } from './dto/auth.dto';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class AuthService {
@@ -32,6 +33,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   async register(dto: RegisterDto): Promise<MessageResponse> {
@@ -48,9 +50,35 @@ export class AuthService {
   ): Promise<LoginResponse> {
     const user = await this.users.findByEmail(dto.email);
     if (!user || !(await this.users.validatePassword(user, dto.password))) {
+      if (user) {
+        await this.audit.recordLogin({
+          userId: user.id,
+          success: false,
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+          deviceName: dto.deviceName,
+          failureReason: 'Invalid password',
+        });
+        await this.audit.log({
+          userId: user.id,
+          action: 'LOGIN_FAILED',
+          resource: 'auth',
+          summary: 'Login failed',
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+        });
+      }
       throw new UnauthorizedException('Invalid email or password');
     }
     if (!user.isActive) {
+      await this.audit.recordLogin({
+        userId: user.id,
+        success: false,
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+        deviceName: dto.deviceName,
+        failureReason: 'Account disabled',
+      });
       throw new UnauthorizedException('Account is disabled');
     }
 
@@ -129,6 +157,12 @@ export class AuthService {
   }): Promise<MessageResponse> {
     if (input.allDevices) {
       await this.sessions.revokeAllSessions(input.userId);
+      await this.audit.log({
+        userId: input.userId,
+        action: 'LOGOUT',
+        resource: 'auth',
+        summary: 'Logged out from all devices',
+      });
       return { message: 'Logged out from all devices' };
     }
 
@@ -137,6 +171,13 @@ export class AuthService {
     } else {
       await this.sessions.revokeSession(input.userId, input.sessionId);
     }
+    await this.audit.log({
+      userId: input.userId,
+      action: 'LOGOUT',
+      resource: 'auth',
+      summary: 'Logged out',
+      metadata: { sessionId: input.sessionId },
+    });
 
     return { message: 'Logged out successfully' };
   }
@@ -262,6 +303,23 @@ export class AuthService {
     });
 
     const user = await this.users.findById(userId);
+
+    await this.audit.recordLogin({
+      userId,
+      success: true,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+      deviceName: meta.deviceName,
+    });
+    await this.audit.log({
+      userId,
+      action: 'LOGIN',
+      resource: 'auth',
+      resourceId: session.id,
+      summary: 'User logged in',
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    });
 
     return {
       user: this.users.toAuthUser(user),
