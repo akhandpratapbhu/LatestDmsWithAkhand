@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './features/auth/auth-context';
+import { OrgProvider } from './features/org/org-context';
 import { LoginPage } from './features/auth/pages/LoginPage';
 import { RegisterPage } from './features/auth/pages/RegisterPage';
 import { ForgotPasswordPage } from './features/auth/pages/ForgotPasswordPage';
@@ -9,6 +10,10 @@ import { VerifyEmailPage } from './features/auth/pages/VerifyEmailPage';
 import { OtpLoginPage } from './features/auth/pages/OtpLoginPage';
 import { DashboardPage } from './features/auth/pages/DashboardPage';
 import { SessionsPage } from './features/auth/pages/SessionsPage';
+import { OrganizationPage } from './features/org/pages/OrganizationPage';
+import { UsersPage } from './features/users/pages/UsersPage';
+import { ProfilePage } from './features/users/pages/ProfilePage';
+import { AcceptInvitePage } from './features/users/pages/AcceptInvitePage';
 import { AuthLayout } from './components/AuthLayout';
 import { AppShell } from './components/AppShell';
 
@@ -20,7 +25,7 @@ function Protected({ children }: { children: ReactNode }) {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-  return <>{children}</>;
+  return <OrgProvider>{children}</OrgProvider>;
 }
 
 function Guest({ children }: { children: ReactNode }) {
@@ -52,6 +57,7 @@ export function App() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/otp-login" element={<OtpLoginPage />} />
+        <Route path="/accept-invite" element={<AcceptInvitePage />} />
       </Route>
 
       <Route
@@ -62,6 +68,9 @@ export function App() {
         }
       >
         <Route path="/app" element={<DashboardPage />} />
+        <Route path="/app/organization" element={<OrganizationPage />} />
+        <Route path="/app/users" element={<UsersPage />} />
+        <Route path="/app/profile" element={<ProfilePage />} />
         <Route path="/app/sessions" element={<SessionsPage />} />
       </Route>
 
