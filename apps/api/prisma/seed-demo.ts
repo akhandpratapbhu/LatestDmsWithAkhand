@@ -159,15 +159,22 @@ async function main() {
     { code: 'menu.search', name: 'Search menu', type: 'MENU' },
     { code: 'menu.activity', name: 'Activity menu', type: 'MENU' },
     { code: 'menu.audit', name: 'Audit menu', type: 'MENU' },
+    { code: 'menu.masters', name: 'Masters menu', type: 'MENU' },
+    { code: 'menu.chat', name: 'Chat menu', type: 'MENU' },
+    { code: 'menu.calls', name: 'Calls menu', type: 'MENU' },
     { code: 'screen.forms', name: 'Form builder', type: 'SCREEN', resource: 'forms', action: 'manage' },
     { code: 'screen.grids', name: 'Grid builder', type: 'SCREEN', resource: 'grids', action: 'manage' },
     { code: 'screen.notifications', name: 'Notifications screen', type: 'SCREEN', resource: 'notifications', action: 'manage' },
     { code: 'screen.search', name: 'Search screen', type: 'SCREEN', resource: 'search', action: 'use' },
     { code: 'screen.activity', name: 'Activity screen', type: 'SCREEN', resource: 'activity', action: 'view' },
     { code: 'screen.audit', name: 'Audit screen', type: 'SCREEN', resource: 'audit', action: 'view' },
+    { code: 'screen.masters', name: 'Masters screen', type: 'SCREEN', resource: 'masters', action: 'manage' },
+    { code: 'screen.chat', name: 'Chat screen', type: 'SCREEN', resource: 'chat', action: 'use' },
+    { code: 'screen.calls', name: 'Calls screen', type: 'SCREEN', resource: 'calls', action: 'use' },
     { code: 'api.forms.write', name: 'Manage forms API', type: 'API', resource: 'forms', action: 'write' },
     { code: 'api.grids.write', name: 'Manage grids API', type: 'API', resource: 'grids', action: 'write' },
     { code: 'api.notifications.write', name: 'Send notifications API', type: 'API', resource: 'notifications', action: 'write' },
+    { code: 'api.masters.write', name: 'Manage masters API', type: 'API', resource: 'masters', action: 'write' },
   ];
   for (const p of extraPerms) {
     await prisma.permission.upsert({
@@ -196,11 +203,14 @@ async function main() {
   }
   const extraMenus = [
     { label: 'Search', path: '/app/search', icon: 'search', permissionCode: 'menu.search', sortOrder: 2, group: 'MAIN' },
-    { label: 'Notifications', path: '/app/notifications', icon: 'bell', permissionCode: 'menu.notifications', sortOrder: 3, group: 'MAIN' },
-    { label: 'Activity', path: '/app/activity', icon: 'activity', permissionCode: 'menu.activity', sortOrder: 4, group: 'MAIN' },
-    { label: 'Forms', path: '/app/forms', icon: 'form', permissionCode: 'menu.forms', sortOrder: 5, group: 'ADMIN' },
-    { label: 'Grids', path: '/app/grids', icon: 'table', permissionCode: 'menu.grids', sortOrder: 6, group: 'ADMIN' },
-    { label: 'Audit', path: '/app/audit', icon: 'audit', permissionCode: 'menu.audit', sortOrder: 7, group: 'ADMIN' },
+    { label: 'Chat', path: '/app/chat', icon: 'chat', permissionCode: 'menu.chat', sortOrder: 3, group: 'MAIN' },
+    { label: 'Calls', path: '/app/calls', icon: 'phone', permissionCode: 'menu.calls', sortOrder: 4, group: 'MAIN' },
+    { label: 'Notifications', path: '/app/notifications', icon: 'bell', permissionCode: 'menu.notifications', sortOrder: 5, group: 'MAIN' },
+    { label: 'Activity', path: '/app/activity', icon: 'activity', permissionCode: 'menu.activity', sortOrder: 6, group: 'MAIN' },
+    { label: 'Masters', path: '/app/masters', icon: 'database', permissionCode: 'menu.masters', sortOrder: 3, group: 'ADMIN' },
+    { label: 'Forms', path: '/app/forms', icon: 'form', permissionCode: 'menu.forms', sortOrder: 6, group: 'ADMIN' },
+    { label: 'Grids', path: '/app/grids', icon: 'table', permissionCode: 'menu.grids', sortOrder: 7, group: 'ADMIN' },
+    { label: 'Audit', path: '/app/audit', icon: 'audit', permissionCode: 'menu.audit', sortOrder: 8, group: 'ADMIN' },
   ];
   const allPermsForMenus = await prisma.permission.findMany({ where: { organizationId: org.id } });
   const permByCode = Object.fromEntries(allPermsForMenus.map((p) => [p.code, p.id]));
@@ -251,9 +261,13 @@ async function main() {
       'menu.notifications',
       'menu.search',
       'menu.activity',
+      'menu.chat',
+      'menu.calls',
       'screen.notifications',
       'screen.search',
       'screen.activity',
+      'screen.chat',
+      'screen.calls',
       'data.users.own',
     ];
     await prisma.rolePermission.deleteMany({ where: { roleId: memberRole.id } });
@@ -272,6 +286,8 @@ async function main() {
       '/app/notifications',
       '/app/search',
       '/app/activity',
+      '/app/chat',
+      '/app/calls',
     ];
     await prisma.roleMenu.deleteMany({ where: { roleId: memberRole.id } });
     await prisma.roleMenu.createMany({
@@ -305,9 +321,16 @@ async function main() {
     'menu.users',
     'menu.profile',
     'menu.sessions',
+    'menu.chat',
+    'menu.calls',
+    'menu.masters',
     'screen.organization',
     'screen.users',
+    'screen.chat',
+    'screen.calls',
+    'screen.masters',
     'api.users.write',
+    'api.masters.write',
     'data.users.all',
     'data.users.own',
   ];
@@ -320,7 +343,16 @@ async function main() {
   });
 
   const menus = await prisma.menu.findMany({ where: { organizationId: org.id } });
-  const managerMenuPaths = ['/app', '/app/organization', '/app/users', '/app/profile', '/app/sessions'];
+  const managerMenuPaths = [
+    '/app',
+    '/app/organization',
+    '/app/users',
+    '/app/masters',
+    '/app/chat',
+    '/app/calls',
+    '/app/profile',
+    '/app/sessions',
+  ];
   await prisma.roleMenu.deleteMany({ where: { roleId: managerRole.id } });
   await prisma.roleMenu.createMany({
     data: menus
@@ -685,6 +717,111 @@ async function main() {
     });
   }
 
+  // Sample business masters (chat/call contacts)
+  await prisma.customer.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'CUST001' } },
+    update: { name: 'Acme Motors', email: 'buyer@acme.example', phone: '+91-90000-11111', linkedUserId: member.id },
+    create: {
+      organizationId: org.id,
+      code: 'CUST001',
+      name: 'Acme Motors',
+      email: 'buyer@acme.example',
+      phone: '+91-90000-11111',
+      company: 'Acme Motors Pvt Ltd',
+      city: 'Pune',
+      linkedUserId: member.id,
+    },
+  });
+  await prisma.dealer.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'DLR001' } },
+    update: { name: 'West Zone Dealer', email: 'dealer@west.example', linkedUserId: manager.id },
+    create: {
+      organizationId: org.id,
+      code: 'DLR001',
+      name: 'West Zone Dealer',
+      email: 'dealer@west.example',
+      phone: '+91-90000-22222',
+      region: 'West',
+      linkedUserId: manager.id,
+    },
+  });
+  await prisma.employee.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'EMP001' } },
+    update: { firstName: 'Ada', lastName: 'Admin', linkedUserId: admin.id },
+    create: {
+      organizationId: org.id,
+      code: 'EMP001',
+      firstName: 'Ada',
+      lastName: 'Admin',
+      email: 'admin@dms.local',
+      designation: 'Administrator',
+      department: 'IT',
+      linkedUserId: admin.id,
+    },
+  });
+  await prisma.vendor.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'VEN001' } },
+    update: { name: 'Parts Supply Co' },
+    create: {
+      organizationId: org.id,
+      code: 'VEN001',
+      name: 'Parts Supply Co',
+      email: 'sales@parts.example',
+      contactPerson: 'Ravi',
+    },
+  });
+  await prisma.vehicle.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'VEH001' } },
+    update: { name: 'Demo SUV' },
+    create: {
+      organizationId: org.id,
+      code: 'VEH001',
+      name: 'Demo SUV',
+      make: 'Tata',
+      model: 'Harrier',
+      year: 2024,
+      registrationNo: 'MH12AB1234',
+    },
+  });
+  await prisma.part.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'PRT001' } },
+    update: { name: 'Oil Filter' },
+    create: {
+      organizationId: org.id,
+      code: 'PRT001',
+      name: 'Oil Filter',
+      sku: 'OF-100',
+      unit: 'pcs',
+      price: 450,
+      category: 'Service',
+    },
+  });
+  await prisma.product.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'PRD001' } },
+    update: { name: 'Extended Warranty' },
+    create: {
+      organizationId: org.id,
+      code: 'PRD001',
+      name: 'Extended Warranty',
+      sku: 'EW-1Y',
+      unit: 'plan',
+      price: 12000,
+      category: 'Service Product',
+    },
+  });
+  await prisma.warehouse.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'WH001' } },
+    update: { name: 'Central Warehouse' },
+    create: {
+      organizationId: org.id,
+      code: 'WH001',
+      name: 'Central Warehouse',
+      city: 'Mumbai',
+      state: 'MH',
+      country: 'IN',
+    },
+  });
+
   console.log('Demo seed complete.\n');
   console.log('Organization: Demo Company');
   console.log('Password for all: Password1\n');
@@ -692,6 +829,7 @@ async function main() {
   console.log('manager@dms.local → Manager Workspace (org + users)');
   console.log('member@dms.local  → Member Home (limited menus)');
   console.log('Sample form: EMP_ONBOARD · Sample grid: CONTACTS');
+  console.log('Masters seeded: CUST001, DLR001, EMP001 (+ vendor/vehicle/part/product/warehouse)');
 }
 
 main()

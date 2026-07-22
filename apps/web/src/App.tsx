@@ -22,6 +22,9 @@ import { GridsPage } from './features/grids/pages/GridsPage';
 import { NotificationsPage } from './features/notifications/pages/NotificationsPage';
 import { SearchPage } from './features/search/pages/SearchPage';
 import { ActivityPage, AuditPage } from './features/audit/pages/ActivityAuditPages';
+import { MastersPage } from './features/masters/pages/MastersPage';
+import { ChatPage } from './features/chat/pages/ChatPage';
+import { CallsPage } from './features/calls/pages/CallsPage';
 import { AuthLayout } from './components/AuthLayout';
 import { AppShell } from './components/AppShell';
 
@@ -90,6 +93,9 @@ export function App() {
         <Route path="/app/search" element={<SearchPage />} />
         <Route path="/app/activity" element={<ActivityPage />} />
         <Route path="/app/audit" element={<AuditPage />} />
+        <Route path="/app/masters" element={<MastersPage />} />
+        <Route path="/app/chat" element={<ChatPage />} />
+        <Route path="/app/calls" element={<CallsPage />} />
         <Route path="/app/profile" element={<ProfilePage />} />
         <Route path="/app/sessions" element={<SessionsPage />} />
       </Route>

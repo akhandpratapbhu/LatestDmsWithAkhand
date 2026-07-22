@@ -540,6 +540,115 @@ label.check {
   font-size: 0.75rem;
 }
 
+.action-row.wrap {
+  flex-wrap: wrap;
+}
+
+.messenger-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.messenger-side,
+.messenger-main {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.85rem;
+  background: #fff;
+  min-height: 520px;
+}
+
+.contact-list {
+  list-style: none;
+  margin: 0.5rem 0 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.contact-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 10px;
+  padding: 0.45rem 0.55rem;
+  display: grid;
+  gap: 0.15rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.contact-item:hover,
+.contact-item.active {
+  border-color: var(--line);
+  background: rgba(47, 140, 98, 0.06);
+}
+
+.message-list {
+  display: grid;
+  gap: 0.55rem;
+  max-height: 360px;
+  overflow: auto;
+  margin: 0.75rem 0;
+}
+
+.bubble {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.55rem 0.7rem;
+  max-width: 85%;
+}
+
+.bubble.mine {
+  margin-left: auto;
+  background: rgba(47, 140, 98, 0.08);
+  border-color: #2f8c62;
+}
+
+.composer {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.composer input {
+  flex: 1;
+}
+
+.call-stage {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.85rem;
+}
+
+.video-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.video-row video {
+  width: 100%;
+  min-height: 160px;
+  background: #111;
+  border-radius: 10px;
+}
+
+.call-banner .action-row {
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .messenger-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .widget-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

@@ -17,6 +17,9 @@ import { GridsModule } from './modules/grids/grids.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SearchModule } from './modules/search/search.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { MastersModule } from './modules/masters/masters.module';
+import { ChatModule } from './modules/chat/chat.module';
+import { CallsModule } from './modules/calls/calls.module';
 import { HealthController } from './health.controller';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 
@@ -41,6 +44,9 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
     NotificationsModule,
     SearchModule,
     AuditModule,
+    MastersModule,
+    ChatModule,
+    CallsModule,
     AuthModule,
   ],
   controllers: [HealthController],

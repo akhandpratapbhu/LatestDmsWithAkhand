@@ -141,6 +141,16 @@ model User {
   auditLogs           AuditLog[]
   activityEvents      ActivityEvent[]
   loginHistory        LoginHistory[]
+  chatMembers         ChatMember[]
+  chatMessages        ChatMessage[]           @relation("ChatMessageSender")
+  chatReceipts        ChatReceipt[]
+  chatRoomsCreated    ChatRoom[]              @relation("ChatRoomCreator")
+  callsMade           CallSession[]           @relation("CallCaller")
+  callsReceived       CallSession[]           @relation("CallCallee")
+  callParticipations  CallParticipant[]
+  linkedCustomers     Customer[]              @relation("CustomerLinkedUser")
+  linkedDealers       Dealer[]                @relation("DealerLinkedUser")
+  linkedEmployees     Employee[]              @relation("EmployeeLinkedUser")
 
   @@map("users")
 }
@@ -239,6 +249,16 @@ model Organization {
   savedSearches SavedSearch[]
   auditLogs     AuditLog[]
   activityEvents ActivityEvent[]
+  customers     Customer[]
+  dealers       Dealer[]
+  employees     Employee[]
+  vendors       Vendor[]
+  vehicles      Vehicle[]
+  parts         Part[]
+  products      Product[]
+  warehouses    Warehouse[]
+  chatRooms     ChatRoom[]
+  callSessions  CallSession[]
 
   @@index([ownerId])
   @@map("organizations")
@@ -951,4 +971,352 @@ model LoginHistory {
 
   @@index([userId, createdAt])
   @@map("login_history")
+}
+
+enum ChatRoomType {
+  DIRECT
+  GROUP
+}
+
+enum ChatContactKind {
+  USER
+  CUSTOMER
+  DEALER
+  EMPLOYEE
+}
+
+enum ChatMessageType {
+  TEXT
+  FILE
+  SYSTEM
+}
+
+enum CallType {
+  AUDIO
+  VIDEO
+}
+
+enum CallStatus {
+  RINGING
+  ACTIVE
+  ENDED
+  MISSED
+  REJECTED
+}
+
+enum CallContactKind {
+  CUSTOMER
+  DEALER
+  EMPLOYEE
+}
+
+model Customer {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  email          String?
+  phone          String?
+  company        String?
+  city           String?
+  notes          String?
+  linkedUserId   String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  linkedUser   User?        @relation("CustomerLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("customers")
+}
+
+model Dealer {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  email          String?
+  phone          String?
+  company        String?
+  city           String?
+  region         String?
+  notes          String?
+  linkedUserId   String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  linkedUser   User?        @relation("DealerLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("dealers")
+}
+
+model Employee {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String?
+  designation    String?
+  department     String?
+  linkedUserId   String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  linkedUser   User?        @relation("EmployeeLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("employees")
+}
+
+model Vendor {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  email          String?
+  phone          String?
+  company        String?
+  city           String?
+  contactPerson  String?
+  gstNumber      String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("vendors")
+}
+
+model Vehicle {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  make           String?
+  model          String?
+  year           Int?
+  vin            String?
+  registrationNo String?
+  color          String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("vehicles")
+}
+
+model Part {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  description    String?
+  sku            String?
+  unit           String?
+  price          Decimal? @db.Decimal(12, 2)
+  category       String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("parts")
+}
+
+model Product {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  description    String?
+  sku            String?
+  unit           String?
+  price          Decimal? @db.Decimal(12, 2)
+  category       String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("products")
+}
+
+model Warehouse {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  address        String?
+  city           String?
+  state          String?
+  country        String?
+  phone          String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("warehouses")
+}
+
+model ChatRoom {
+  id             String           @id @default(uuid())
+  organizationId String
+  type           ChatRoomType     @default(DIRECT)
+  name           String?
+  contactKind    ChatContactKind?
+  contactId      String?
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("ChatRoomCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  members      ChatMember[]
+  messages     ChatMessage[]
+  calls        CallSession[]
+
+  @@index([organizationId])
+  @@index([contactKind, contactId])
+  @@map("chat_rooms")
+}
+
+model ChatMember {
+  id         String    @id @default(uuid())
+  roomId     String
+  userId     String
+  lastReadAt DateTime?
+  joinedAt   DateTime  @default(now())
+
+  room ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId])
+  @@map("chat_members")
+}
+
+model ChatMessage {
+  id          String          @id @default(uuid())
+  roomId      String
+  senderId    String
+  body        String?
+  messageType ChatMessageType @default(TEXT)
+  fileUrl     String?
+  fileName    String?
+  fileMime    String?
+  fileSize    Int?
+  createdAt   DateTime        @default(now())
+
+  room     ChatRoom      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender   User          @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receipts ChatReceipt[]
+
+  @@index([roomId, createdAt])
+  @@index([senderId])
+  @@map("chat_messages")
+}
+
+model ChatReceipt {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+  @@map("chat_receipts")
+}
+
+model CallSession {
+  id             String           @id @default(uuid())
+  organizationId String
+  roomId         String?
+  callerId       String
+  calleeUserId   String?
+  contactKind    CallContactKind?
+  contactId      String?
+  callType       CallType
+  status         CallStatus       @default(RINGING)
+  screenShare    Boolean          @default(false)
+  startedAt      DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime         @default(now())
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         ChatRoom?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  caller       User              @relation("CallCaller", fields: [callerId], references: [id], onDelete: Cascade)
+  callee       User?             @relation("CallCallee", fields: [calleeUserId], references: [id], onDelete: SetNull)
+  participants CallParticipant[]
+  recordings   CallRecording[]
+
+  @@index([organizationId, createdAt])
+  @@index([callerId])
+  @@index([calleeUserId])
+  @@map("call_sessions")
+}
+
+model CallParticipant {
+  id       String    @id @default(uuid())
+  callId   String
+  userId   String
+  joinedAt DateTime?
+  leftAt   DateTime?
+
+  call CallSession @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([callId, userId])
+  @@index([userId])
+  @@map("call_participants")
+}
+
+model CallRecording {
+  id          String   @id @default(uuid())
+  callId      String
+  fileUrl     String
+  fileName    String?
+  durationSec Int?
+  createdAt   DateTime @default(now())
+
+  call CallSession @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId])
+  @@map("call_recordings")
 }
