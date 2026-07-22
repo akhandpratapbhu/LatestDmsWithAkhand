@@ -56,9 +56,6 @@ Repo: [LatestDmsWithAkhand](https://github.com/akhandpratapbhu/LatestDmsWithAkha
   - `Build API`
   - `Build Web`
   - `CI Result`
-  - `Lint & format` (optional but recommended)
-  - `Auth smoke test` (optional)
-  - `Docker build (verify)` (optional)
 - Do not allow bypassing (recommended)
 
 ### Rule for `main`

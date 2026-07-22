@@ -4,16 +4,25 @@
 
 | Workflow       | File                       | When                                 | What                                                      |
 | -------------- | -------------------------- | ------------------------------------ | --------------------------------------------------------- |
-| **CI**         | `.github/workflows/ci.yml` | PR + push to `main`/`develop`        | Format, lint, build, auth smoke test, Docker build verify |
-| **CD**         | `.github/workflows/cd.yml` | Push to `main`, tags `v*`, or manual | Build & push images to GHCR, deploy staging/production    |
-| **Dependabot** | `.github/dependabot.yml`   | Weekly                               | npm + Actions + Docker base image PRs                     |
+| **CI**         | `.github/workflows/ci.yml` | PR + push to `main`/`develop`        | Build API, Build Web, Docker verify   |
+| **CD**         | `.github/workflows/cd.yml` | Push to `main`/`develop`, tags, manual | Build & push images to GHCR, deploy |
+| **Dependabot** | `.github/dependabot.yml`   | Weekly                               | npm + Actions + Docker base image PRs |
 
 ## CI jobs
 
-1. **Lint & format** — Prettier + TypeScript checks
-2. **Build apps** — Prisma generate/push against ephemeral Postgres/Redis, build shared/api/web, upload artifacts
-3. **Auth smoke test** — Boots API and runs `scripts/ci-smoke.sh`
-4. **Docker build** — Validates `apps/api` and `apps/web` Dockerfiles (no push)
+All defined in **`.github/workflows/ci.yml`**:
+
+1. **Build API** — `working-directory: apps/api` → `npm run build`
+2. **Build Web** — `working-directory: apps/web` → `npm run build`
+3. **Docker build (verify)** — validates Dockerfiles (no push)
+4. **CI Result** — passes only if both app builds succeeded
+
+### How to remove a check yourself
+
+1. Open `.github/workflows/ci.yml`
+2. Delete the whole `job` block (e.g. `quality:` or `smoke:`)
+3. If `ci-result` has `needs: [...]`, remove that job name from the list
+4. Commit + push — next Actions run will no longer show that check
 
 ## CD flow
 
@@ -70,7 +79,7 @@ After the first CD run, open **Packages** on the repo. For private images, grant
 For `main`:
 
 - Require PR before merge
-- Require status checks: `Lint & format`, `Build apps`, `Auth smoke test`, `Docker build (verify)`
+- Require status checks: `Build API`, `Build Web`, `CI Result`
 - Restrict who can push
 
 ## Manual deploy

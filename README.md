@@ -81,7 +81,7 @@ docs/           Coding standards
 
 ## CI/CD (GitHub Actions)
 
-- **CI** on every PR/push to `develop` & `main`: lint, build, auth smoke test, Docker build check
+- **CI** on every PR/push to `develop` & `main`: `apps/api` + `apps/web` build checks (+ optional Docker verify)
 - **CD** after merge:
   - `develop` → staging images/deploy
   - `main` → production images/deploy
