@@ -21,6 +21,7 @@
     "db:migrate": "npm run prisma:migrate -w @dms/api",
     "db:push": "npm run prisma:push -w @dms/api",
     "db:studio": "npm run prisma:studio -w @dms/api",
+    "db:seed": "npm run prisma:seed -w @dms/api",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f"

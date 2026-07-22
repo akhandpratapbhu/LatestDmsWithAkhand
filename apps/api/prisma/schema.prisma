@@ -41,6 +41,48 @@ enum WidgetType {
   TEXT
 }
 
+enum FormLayoutType {
+  STACK
+  GRID
+  TABS
+}
+
+enum FormStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum ControlType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  EMAIL
+  SELECT
+  MULTI_SELECT
+  CHECKBOX
+  DATE
+  FILE
+}
+
+enum ValidationRuleType {
+  REQUIRED
+  MIN
+  MAX
+  MIN_LENGTH
+  MAX_LENGTH
+  PATTERN
+  EMAIL
+  CUSTOM
+}
+
+enum GridColumnType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  ENUM
+}
+
 model User {
   id              String            @id @default(uuid())
   email           String            @unique
@@ -64,6 +106,8 @@ model User {
   ownedOrganizations  Organization[]           @relation("OrgOwner")
   invitesSent         UserInvite[]             @relation("InviteSender")
   invitesReceived     UserInvite[]             @relation("InviteReceiver")
+  formSubmissions     FormSubmission[]
+  gridSavedViews      GridSavedView[]
 
   @@map("users")
 }
@@ -156,6 +200,8 @@ model Organization {
   menus         Menu[]
   dashboards    Dashboard[]
   landingPages  LandingPage[]
+  dynamicForms  DynamicForm[]
+  dynamicGrids  DynamicGrid[]
 
   @@index([ownerId])
   @@map("organizations")
@@ -521,4 +567,205 @@ model LandingPage {
   @@unique([organizationId, roleId])
   @@index([organizationId])
   @@map("landing_pages")
+}
+
+model DynamicForm {
+  id             String         @id @default(uuid())
+  organizationId String
+  name           String
+  code           String
+  description    String?
+  layoutType     FormLayoutType @default(TABS)
+  layoutConfig   Json           @default("{}")
+  status         FormStatus     @default(DRAFT)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tabs         FormTab[]
+  sections     FormSection[]
+  submissions  FormSubmission[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("dynamic_forms")
+}
+
+model FormTab {
+  id        String   @id @default(uuid())
+  formId    String
+  name      String
+  code      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  form     DynamicForm  @relation(fields: [formId], references: [id], onDelete: Cascade)
+  sections FormSection[]
+
+  @@unique([formId, code])
+  @@index([formId])
+  @@map("form_tabs")
+}
+
+model FormSection {
+  id          String   @id @default(uuid())
+  formId      String
+  tabId       String?
+  name        String
+  code        String
+  columns     Int      @default(2)
+  sortOrder   Int      @default(0)
+  collapsible Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  form     DynamicForm   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  tab      FormTab?      @relation(fields: [tabId], references: [id], onDelete: SetNull)
+  controls FormControl[]
+
+  @@unique([formId, code])
+  @@index([formId])
+  @@index([tabId])
+  @@map("form_sections")
+}
+
+model FormControl {
+  id           String      @id @default(uuid())
+  sectionId    String
+  fieldKey     String
+  label        String
+  controlType  ControlType @default(TEXT)
+  placeholder  String?
+  helpText     String?
+  defaultValue String?
+  options      Json        @default("[]")
+  colSpan      Int         @default(1)
+  sortOrder    Int         @default(0)
+  required     Boolean     @default(false)
+  isActive     Boolean     @default(true)
+  config       Json        @default("{}")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  section     FormSection      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  validations FormValidation[]
+
+  @@unique([sectionId, fieldKey])
+  @@index([sectionId])
+  @@map("form_controls")
+}
+
+model FormValidation {
+  id        String             @id @default(uuid())
+  controlId String
+  ruleType  ValidationRuleType
+  value     String?
+  message   String
+  sortOrder Int                @default(0)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  control FormControl @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@index([controlId])
+  @@map("form_validations")
+}
+
+model FormSubmission {
+  id          String   @id @default(uuid())
+  formId      String
+  submittedBy String?
+  data        Json
+  createdAt   DateTime @default(now())
+
+  form DynamicForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  user User?       @relation(fields: [submittedBy], references: [id], onDelete: SetNull)
+
+  @@index([formId])
+  @@map("form_submissions")
+}
+
+model DynamicGrid {
+  id              String   @id @default(uuid())
+  organizationId  String
+  name            String
+  code            String
+  description     String?
+  pageSize        Int      @default(10)
+  enableSort      Boolean  @default(true)
+  enableFilter    Boolean  @default(true)
+  enableExport    Boolean  @default(true)
+  enableImport    Boolean  @default(true)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  columns      GridColumn[]
+  rows         GridRow[]
+  savedViews   GridSavedView[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("dynamic_grids")
+}
+
+model GridColumn {
+  id         String         @id @default(uuid())
+  gridId     String
+  fieldKey   String
+  title      String
+  dataType   GridColumnType @default(TEXT)
+  sortable   Boolean        @default(true)
+  filterable Boolean        @default(true)
+  visible    Boolean        @default(true)
+  width      Int?
+  sortOrder  Int            @default(0)
+  format     String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  grid DynamicGrid @relation(fields: [gridId], references: [id], onDelete: Cascade)
+
+  @@unique([gridId, fieldKey])
+  @@index([gridId])
+  @@map("grid_columns")
+}
+
+model GridRow {
+  id        String   @id @default(uuid())
+  gridId    String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grid DynamicGrid @relation(fields: [gridId], references: [id], onDelete: Cascade)
+
+  @@index([gridId])
+  @@map("grid_rows")
+}
+
+model GridSavedView {
+  id        String   @id @default(uuid())
+  gridId    String
+  userId    String?
+  name      String
+  filters   Json     @default("[]")
+  sorts     Json     @default("[]")
+  columns   Json     @default("[]")
+  isDefault Boolean  @default(false)
+  isShared  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grid DynamicGrid @relation(fields: [gridId], references: [id], onDelete: Cascade)
+  user User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([gridId])
+  @@index([userId])
+  @@map("grid_saved_views")
 }

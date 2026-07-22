@@ -16,15 +16,21 @@ const DEFAULT_PERMISSIONS: SeedPerm[] = [
   { code: 'menu.users', name: 'Users menu', type: 'MENU' },
   { code: 'menu.iam', name: 'IAM menu', type: 'MENU' },
   { code: 'menu.dashboards', name: 'Dashboards menu', type: 'MENU' },
+  { code: 'menu.forms', name: 'Forms menu', type: 'MENU' },
+  { code: 'menu.grids', name: 'Grids menu', type: 'MENU' },
   { code: 'menu.profile', name: 'Profile menu', type: 'MENU' },
   { code: 'menu.sessions', name: 'Sessions menu', type: 'MENU' },
   { code: 'screen.organization', name: 'Organization screen', type: 'SCREEN', resource: 'organization', action: 'view' },
   { code: 'screen.users', name: 'Users screen', type: 'SCREEN', resource: 'users', action: 'view' },
   { code: 'screen.iam', name: 'IAM screen', type: 'SCREEN', resource: 'iam', action: 'manage' },
   { code: 'screen.dashboards', name: 'Dashboard builder', type: 'SCREEN', resource: 'dashboards', action: 'manage' },
+  { code: 'screen.forms', name: 'Form builder', type: 'SCREEN', resource: 'forms', action: 'manage' },
+  { code: 'screen.grids', name: 'Grid builder', type: 'SCREEN', resource: 'grids', action: 'manage' },
   { code: 'api.users.write', name: 'Manage users API', type: 'API', resource: 'users', action: 'write' },
   { code: 'api.iam.write', name: 'Manage IAM API', type: 'API', resource: 'iam', action: 'write' },
   { code: 'api.dashboards.write', name: 'Manage dashboards API', type: 'API', resource: 'dashboards', action: 'write' },
+  { code: 'api.forms.write', name: 'Manage forms API', type: 'API', resource: 'forms', action: 'write' },
+  { code: 'api.grids.write', name: 'Manage grids API', type: 'API', resource: 'grids', action: 'write' },
   { code: 'data.users.all', name: 'View all users data', type: 'DATA', resource: 'users', action: 'read_all' },
   { code: 'data.users.own', name: 'View own profile data', type: 'DATA', resource: 'users', action: 'read_own' },
 ];
@@ -110,6 +116,8 @@ export class IamSeedService {
         { label: 'Users', path: '/app/users', icon: 'users', groupId: adminGroup.id, permissionCode: 'menu.users', sortOrder: 2 },
         { label: 'IAM', path: '/app/iam', icon: 'key', groupId: adminGroup.id, permissionCode: 'menu.iam', sortOrder: 3 },
         { label: 'Dashboards', path: '/app/dashboards', icon: 'layout', groupId: adminGroup.id, permissionCode: 'menu.dashboards', sortOrder: 4 },
+        { label: 'Forms', path: '/app/forms', icon: 'form', groupId: adminGroup.id, permissionCode: 'menu.forms', sortOrder: 5 },
+        { label: 'Grids', path: '/app/grids', icon: 'table', groupId: adminGroup.id, permissionCode: 'menu.grids', sortOrder: 6 },
       ];
 
       const createdMenus = [];

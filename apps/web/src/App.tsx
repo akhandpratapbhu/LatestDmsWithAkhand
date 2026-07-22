@@ -17,6 +17,8 @@ import { ProfilePage } from './features/users/pages/ProfilePage';
 import { AcceptInvitePage } from './features/users/pages/AcceptInvitePage';
 import { IamPage } from './features/iam/pages/IamPage';
 import { DashboardsAdminPage } from './features/dashboards/pages/DashboardsAdminPage';
+import { FormsPage } from './features/forms/pages/FormsPage';
+import { GridsPage } from './features/grids/pages/GridsPage';
 import { AuthLayout } from './components/AuthLayout';
 import { AppShell } from './components/AppShell';
 
@@ -79,6 +81,8 @@ export function App() {
         <Route path="/app/users" element={<UsersPage />} />
         <Route path="/app/iam" element={<IamPage />} />
         <Route path="/app/dashboards" element={<DashboardsAdminPage />} />
+        <Route path="/app/forms" element={<FormsPage />} />
+        <Route path="/app/grids" element={<GridsPage />} />
         <Route path="/app/profile" element={<ProfilePage />} />
         <Route path="/app/sessions" element={<SessionsPage />} />
       </Route>

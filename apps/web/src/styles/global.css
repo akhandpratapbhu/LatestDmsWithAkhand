@@ -433,6 +433,58 @@ label.check {
   color: #7f9487;
 }
 
+.form-controls-grid {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.form-tab-block,
+.form-section-block {
+  margin-bottom: 1rem;
+}
+
+.tab-heading {
+  margin: 0.5rem 0;
+  font-size: 1.05rem;
+}
+
+.grid-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+  margin: 1rem 0;
+}
+
+.grid-toolbar label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin: 0.75rem 0 1rem;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.data-table th,
+.data-table td {
+  border: 1px solid var(--line);
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+}
+
+.data-table th {
+  background: rgba(0, 0, 0, 0.03);
+}
+
 .widget-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
