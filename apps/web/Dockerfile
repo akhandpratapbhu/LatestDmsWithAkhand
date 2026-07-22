@@ -9,7 +9,7 @@ RUN npm install --workspace=@dms/web --workspace=@dms/shared --include-workspace
 COPY . .
 RUN npm run build -w @dms/shared && npm run build -w @dms/web
 
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
