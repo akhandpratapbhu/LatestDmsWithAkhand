@@ -10,6 +10,10 @@ import { MailModule } from './mail/mail.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { IamModule } from './modules/iam/iam.module';
+import { DashboardsModule } from './modules/dashboards/dashboards.module';
+import { FormsModule } from './modules/forms/forms.module';
+import { GridsModule } from './modules/grids/grids.module';
 import { HealthController } from './health.controller';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 
@@ -27,6 +31,10 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
     MailModule,
     OrganizationsModule,
     UsersModule,
+    IamModule,
+    DashboardsModule,
+    FormsModule,
+    GridsModule,
     AuthModule,
   ],
   controllers: [HealthController],
