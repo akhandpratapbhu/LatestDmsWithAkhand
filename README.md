@@ -81,10 +81,13 @@ docs/           Coding standards
 
 ## CI/CD (GitHub Actions)
 
-- **CI** on every PR/push: lint, build, auth smoke test, Docker build check
-- **CD** on `main` / tags `v*`: push images to GHCR + staging/production deploy hooks
+- **CI** on every PR/push to `develop` & `main`: lint, build, auth smoke test, Docker build check
+- **CD** after merge:
+  - `develop` → staging images/deploy
+  - `main` → production images/deploy
 
-Full setup guide: [docs/CICD.md](docs/CICD.md)
+Branch flow guide: [docs/BRANCHING.md](docs/BRANCHING.md)  
+CI/CD setup: [docs/CICD.md](docs/CICD.md)
 
 ## Postman
 
@@ -99,4 +102,5 @@ See [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md).
 ```bash
 docker compose --profile full up --build
 ```
+
 # DMSWithAkhand
