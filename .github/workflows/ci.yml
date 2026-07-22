@@ -1,10 +1,14 @@
 name: CI
 
-# On every push / PR: run npm run build in apps/api and apps/web.
-# If either build fails, the workflow fails (red ✗). Both green = pass (✓).
+# On every push / PR into develop or main:
+# - Build API  = cd apps/api && npm run build
+# - Build Web  = cd apps/web && npm run build
+# Fail → red check → with branch protection, Merge is blocked.
+# Pass → green → PR can merge (feature→develop, or develop→main).
 #
-# Jobs live in THIS file: .github/workflows/ci.yml
-# To remove a check later: delete that job block, then remove it from ci-result needs.
+# File: .github/workflows/ci.yml
+# Branch rules (main only from develop): .github/workflows/enforce-branch-flow.yml
+# GitHub UI setup: docs/BRANCHING.md
 on:
   push:
     branches: [main, develop, 'feature/**', 'fix/**', 'chore/**']
