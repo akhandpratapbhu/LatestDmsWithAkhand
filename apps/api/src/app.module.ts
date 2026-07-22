@@ -14,6 +14,9 @@ import { IamModule } from './modules/iam/iam.module';
 import { DashboardsModule } from './modules/dashboards/dashboards.module';
 import { FormsModule } from './modules/forms/forms.module';
 import { GridsModule } from './modules/grids/grids.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { SearchModule } from './modules/search/search.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { HealthController } from './health.controller';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 
@@ -35,6 +38,9 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
     DashboardsModule,
     FormsModule,
     GridsModule,
+    NotificationsModule,
+    SearchModule,
+    AuditModule,
     AuthModule,
   ],
   controllers: [HealthController],

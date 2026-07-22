@@ -18,6 +18,10 @@ const DEFAULT_PERMISSIONS: SeedPerm[] = [
   { code: 'menu.dashboards', name: 'Dashboards menu', type: 'MENU' },
   { code: 'menu.forms', name: 'Forms menu', type: 'MENU' },
   { code: 'menu.grids', name: 'Grids menu', type: 'MENU' },
+  { code: 'menu.notifications', name: 'Notifications menu', type: 'MENU' },
+  { code: 'menu.search', name: 'Search menu', type: 'MENU' },
+  { code: 'menu.activity', name: 'Activity menu', type: 'MENU' },
+  { code: 'menu.audit', name: 'Audit menu', type: 'MENU' },
   { code: 'menu.profile', name: 'Profile menu', type: 'MENU' },
   { code: 'menu.sessions', name: 'Sessions menu', type: 'MENU' },
   { code: 'screen.organization', name: 'Organization screen', type: 'SCREEN', resource: 'organization', action: 'view' },
@@ -26,11 +30,16 @@ const DEFAULT_PERMISSIONS: SeedPerm[] = [
   { code: 'screen.dashboards', name: 'Dashboard builder', type: 'SCREEN', resource: 'dashboards', action: 'manage' },
   { code: 'screen.forms', name: 'Form builder', type: 'SCREEN', resource: 'forms', action: 'manage' },
   { code: 'screen.grids', name: 'Grid builder', type: 'SCREEN', resource: 'grids', action: 'manage' },
+  { code: 'screen.notifications', name: 'Notifications screen', type: 'SCREEN', resource: 'notifications', action: 'manage' },
+  { code: 'screen.search', name: 'Search screen', type: 'SCREEN', resource: 'search', action: 'use' },
+  { code: 'screen.activity', name: 'Activity screen', type: 'SCREEN', resource: 'activity', action: 'view' },
+  { code: 'screen.audit', name: 'Audit screen', type: 'SCREEN', resource: 'audit', action: 'view' },
   { code: 'api.users.write', name: 'Manage users API', type: 'API', resource: 'users', action: 'write' },
   { code: 'api.iam.write', name: 'Manage IAM API', type: 'API', resource: 'iam', action: 'write' },
   { code: 'api.dashboards.write', name: 'Manage dashboards API', type: 'API', resource: 'dashboards', action: 'write' },
   { code: 'api.forms.write', name: 'Manage forms API', type: 'API', resource: 'forms', action: 'write' },
   { code: 'api.grids.write', name: 'Manage grids API', type: 'API', resource: 'grids', action: 'write' },
+  { code: 'api.notifications.write', name: 'Send notifications API', type: 'API', resource: 'notifications', action: 'write' },
   { code: 'data.users.all', name: 'View all users data', type: 'DATA', resource: 'users', action: 'read_all' },
   { code: 'data.users.own', name: 'View own profile data', type: 'DATA', resource: 'users', action: 'read_own' },
 ];
@@ -86,6 +95,12 @@ export class IamSeedService {
         'menu.overview',
         'menu.profile',
         'menu.sessions',
+        'menu.notifications',
+        'menu.search',
+        'menu.activity',
+        'screen.notifications',
+        'screen.search',
+        'screen.activity',
         'data.users.own',
       ];
       await tx.rolePermission.createMany({
@@ -110,14 +125,18 @@ export class IamSeedService {
         sortOrder: number;
       }> = [
         { label: 'Overview', path: '/app', icon: 'home', groupId: mainGroup.id, permissionCode: 'menu.overview', sortOrder: 1 },
-        { label: 'Profile', path: '/app/profile', icon: 'user', groupId: mainGroup.id, permissionCode: 'menu.profile', sortOrder: 2 },
-        { label: 'Sessions', path: '/app/sessions', icon: 'shield', groupId: mainGroup.id, permissionCode: 'menu.sessions', sortOrder: 3 },
+        { label: 'Search', path: '/app/search', icon: 'search', groupId: mainGroup.id, permissionCode: 'menu.search', sortOrder: 2 },
+        { label: 'Notifications', path: '/app/notifications', icon: 'bell', groupId: mainGroup.id, permissionCode: 'menu.notifications', sortOrder: 3 },
+        { label: 'Activity', path: '/app/activity', icon: 'activity', groupId: mainGroup.id, permissionCode: 'menu.activity', sortOrder: 4 },
+        { label: 'Profile', path: '/app/profile', icon: 'user', groupId: mainGroup.id, permissionCode: 'menu.profile', sortOrder: 5 },
+        { label: 'Sessions', path: '/app/sessions', icon: 'shield', groupId: mainGroup.id, permissionCode: 'menu.sessions', sortOrder: 6 },
         { label: 'Organization', path: '/app/organization', icon: 'building', groupId: adminGroup.id, permissionCode: 'menu.organization', sortOrder: 1 },
         { label: 'Users', path: '/app/users', icon: 'users', groupId: adminGroup.id, permissionCode: 'menu.users', sortOrder: 2 },
         { label: 'IAM', path: '/app/iam', icon: 'key', groupId: adminGroup.id, permissionCode: 'menu.iam', sortOrder: 3 },
         { label: 'Dashboards', path: '/app/dashboards', icon: 'layout', groupId: adminGroup.id, permissionCode: 'menu.dashboards', sortOrder: 4 },
         { label: 'Forms', path: '/app/forms', icon: 'form', groupId: adminGroup.id, permissionCode: 'menu.forms', sortOrder: 5 },
         { label: 'Grids', path: '/app/grids', icon: 'table', groupId: adminGroup.id, permissionCode: 'menu.grids', sortOrder: 6 },
+        { label: 'Audit', path: '/app/audit', icon: 'audit', groupId: adminGroup.id, permissionCode: 'menu.audit', sortOrder: 7 },
       ];
 
       const createdMenus = [];
@@ -140,7 +159,9 @@ export class IamSeedService {
         data: createdMenus.map((m) => ({ roleId: adminRole.id, menuId: m.id })),
       });
       const memberMenus = createdMenus.filter((m) =>
-        ['/app', '/app/profile', '/app/sessions'].includes(m.path ?? ''),
+        ['/app', '/app/profile', '/app/sessions', '/app/notifications', '/app/search', '/app/activity'].includes(
+          m.path ?? '',
+        ),
       );
       await tx.roleMenu.createMany({
         data: memberMenus.map((m) => ({ roleId: memberRole.id, menuId: m.id })),

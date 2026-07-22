@@ -19,6 +19,9 @@ import { IamPage } from './features/iam/pages/IamPage';
 import { DashboardsAdminPage } from './features/dashboards/pages/DashboardsAdminPage';
 import { FormsPage } from './features/forms/pages/FormsPage';
 import { GridsPage } from './features/grids/pages/GridsPage';
+import { NotificationsPage } from './features/notifications/pages/NotificationsPage';
+import { SearchPage } from './features/search/pages/SearchPage';
+import { ActivityPage, AuditPage } from './features/audit/pages/ActivityAuditPages';
 import { AuthLayout } from './components/AuthLayout';
 import { AppShell } from './components/AppShell';
 
@@ -83,6 +86,10 @@ export function App() {
         <Route path="/app/dashboards" element={<DashboardsAdminPage />} />
         <Route path="/app/forms" element={<FormsPage />} />
         <Route path="/app/grids" element={<GridsPage />} />
+        <Route path="/app/notifications" element={<NotificationsPage />} />
+        <Route path="/app/search" element={<SearchPage />} />
+        <Route path="/app/activity" element={<ActivityPage />} />
+        <Route path="/app/audit" element={<AuditPage />} />
         <Route path="/app/profile" element={<ProfilePage />} />
         <Route path="/app/sessions" element={<SessionsPage />} />
       </Route>

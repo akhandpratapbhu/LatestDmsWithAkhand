@@ -83,6 +83,32 @@ enum GridColumnType {
   ENUM
 }
 
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  VIEW
+  EXPORT
+  IMPORT
+  OTHER
+}
+
 model User {
   id              String            @id @default(uuid())
   email           String            @unique
@@ -108,6 +134,13 @@ model User {
   invitesReceived     UserInvite[]             @relation("InviteReceiver")
   formSubmissions     FormSubmission[]
   gridSavedViews      GridSavedView[]
+  notifications       Notification[]
+  notificationPrefs   NotificationPreference[]
+  pushDevices         PushDevice[]
+  savedSearches       SavedSearch[]
+  auditLogs           AuditLog[]
+  activityEvents      ActivityEvent[]
+  loginHistory        LoginHistory[]
 
   @@map("users")
 }
@@ -202,6 +235,10 @@ model Organization {
   landingPages  LandingPage[]
   dynamicForms  DynamicForm[]
   dynamicGrids  DynamicGrid[]
+  notifications Notification[]
+  savedSearches SavedSearch[]
+  auditLogs     AuditLog[]
+  activityEvents ActivityEvent[]
 
   @@index([ownerId])
   @@map("organizations")
@@ -768,4 +805,150 @@ model GridSavedView {
   @@index([gridId])
   @@index([userId])
   @@map("grid_saved_views")
+}
+
+model Notification {
+  id             String   @id @default(uuid())
+  organizationId String?
+  userId         String
+  title          String
+  body           String
+  type           String   @default("INFO")
+  link           String?
+  data           Json     @default("{}")
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization?          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries   NotificationDelivery[]
+
+  @@index([userId, createdAt])
+  @@index([organizationId])
+  @@map("notifications")
+}
+
+model NotificationDelivery {
+  id             String                      @id @default(uuid())
+  notificationId String
+  channel        NotificationChannel
+  status         NotificationDeliveryStatus  @default(PENDING)
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime                    @default(now())
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@map("notification_deliveries")
+}
+
+model NotificationPreference {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  emailEnabled   Boolean  @default(true)
+  pushEnabled    Boolean  @default(true)
+  inAppEnabled   Boolean  @default(true)
+  mutedTypes     Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+model PushDevice {
+  id         String   @id @default(uuid())
+  userId     String
+  token      String
+  platform   String   @default("web")
+  label      String?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, token])
+  @@index([userId])
+  @@map("push_devices")
+}
+
+model SavedSearch {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  name           String
+  query          String
+  scope          String   @default("ALL")
+  filters        Json     @default("{}")
+  isShared       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@map("saved_searches")
+}
+
+model AuditLog {
+  id             String      @id @default(uuid())
+  organizationId String?
+  userId         String?
+  action         AuditAction
+  resource       String
+  resourceId     String?
+  summary        String?
+  metadata       Json        @default("{}")
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime    @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([resource])
+  @@map("audit_logs")
+}
+
+model ActivityEvent {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String?
+  actorId        String?
+  type           String
+  title          String
+  summary        String?
+  link           String?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@map("activity_events")
+}
+
+model LoginHistory {
+  id            String   @id @default(uuid())
+  userId        String
+  success       Boolean
+  ipAddress     String?
+  userAgent     String?
+  deviceName    String?
+  failureReason String?
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("login_history")
 }

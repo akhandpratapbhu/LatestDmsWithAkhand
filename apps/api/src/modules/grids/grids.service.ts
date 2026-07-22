@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { GridColumnType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 type FilterOp = {
   field: string;
@@ -16,7 +17,10 @@ type SortOp = { field: string; dir?: 'asc' | 'desc' };
 
 @Injectable()
 export class GridsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   list(organizationId: string) {
     return this.prisma.dynamicGrid.findMany({
@@ -41,7 +45,7 @@ export class GridsService {
     return grid;
   }
 
-  create(
+  async create(
     organizationId: string,
     data: {
       name: string;
@@ -53,8 +57,9 @@ export class GridsService {
       enableExport?: boolean;
       enableImport?: boolean;
     },
+    userId?: string,
   ) {
-    return this.prisma.dynamicGrid.create({
+    const grid = await this.prisma.dynamicGrid.create({
       data: {
         organizationId,
         name: data.name,
@@ -68,6 +73,23 @@ export class GridsService {
       },
       include: { columns: true },
     });
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'CREATE',
+      resource: 'grid',
+      resourceId: grid.id,
+      summary: `Created grid ${grid.name}`,
+    });
+    await this.audit.recordActivity({
+      organizationId,
+      userId,
+      type: 'GRID_CREATED',
+      title: `Grid created: ${grid.name}`,
+      link: '/app/grids',
+      metadata: { gridId: grid.id, code: grid.code },
+    });
+    return grid;
   }
 
   async update(

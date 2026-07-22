@@ -11,10 +11,14 @@ import {
   ValidationRuleType,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class FormsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   private formInclude = {
     tabs: { orderBy: { sortOrder: 'asc' as const } },
@@ -48,7 +52,7 @@ export class FormsService {
     return form;
   }
 
-  create(
+  async create(
     organizationId: string,
     data: {
       name: string;
@@ -57,8 +61,9 @@ export class FormsService {
       layoutType?: FormLayoutType;
       layoutConfig?: Record<string, unknown>;
     },
+    userId?: string,
   ) {
-    return this.prisma.dynamicForm.create({
+    const form = await this.prisma.dynamicForm.create({
       data: {
         organizationId,
         name: data.name,
@@ -69,6 +74,23 @@ export class FormsService {
       },
       include: this.formInclude,
     });
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'CREATE',
+      resource: 'form',
+      resourceId: form.id,
+      summary: `Created form ${form.name}`,
+    });
+    await this.audit.recordActivity({
+      organizationId,
+      userId,
+      type: 'FORM_CREATED',
+      title: `Form created: ${form.name}`,
+      link: '/app/forms',
+      metadata: { formId: form.id, code: form.code },
+    });
+    return form;
   }
 
   async update(

@@ -34,8 +34,12 @@ export class GridsController {
 
   @Post()
   @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
-  create(@CurrentOrg() org: OrgContext, @Body() dto: CreateGridDto) {
-    return this.grids.create(org.organizationId, dto);
+  create(
+    @CurrentOrg() org: OrgContext,
+    @CurrentUser() user: JwtPayloadUser,
+    @Body() dto: CreateGridDto,
+  ) {
+    return this.grids.create(org.organizationId, dto, user.userId);
   }
 
   @Patch('columns/:columnId')

@@ -1,12 +1,34 @@
+import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import { useAuth } from '../features/auth/auth-context';
 import { useOrg } from '../features/org/org-context';
 import { useIam } from '../features/iam/iam-context';
+import { api, getAccessToken } from '../lib/api';
 
 export function AppShell() {
   const { user, logout } = useAuth();
   const { organizations, currentOrg, selectOrg } = useOrg();
   const { sidebar, loading } = useIam();
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    void api<{ count: number }>('/notifications/unread-count')
+      .then((r) => setUnread(r.count))
+      .catch(() => undefined);
+
+    const token = getAccessToken();
+    if (!token) return;
+    const socket = io(`${window.location.origin}/notifications`, {
+      path: '/socket.io',
+      auth: { token },
+      transports: ['websocket', 'polling'],
+    });
+    socket.on('notification', () => setUnread((c) => c + 1));
+    return () => {
+      socket.disconnect();
+    };
+  }, [user?.id, currentOrg?.id]);
 
   return (
     <div className="app-shell">
@@ -37,6 +59,9 @@ export function AppShell() {
                   menu.path ? (
                     <NavLink key={menu.id} to={menu.path} end={menu.path === '/app'}>
                       {menu.label}
+                      {menu.path === '/app/notifications' && unread > 0 ? (
+                        <span className="nav-badge">{unread}</span>
+                      ) : null}
                     </NavLink>
                   ) : null,
                 )}

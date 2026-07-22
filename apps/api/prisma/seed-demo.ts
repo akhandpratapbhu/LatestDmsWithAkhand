@@ -155,10 +155,19 @@ async function main() {
   }> = [
     { code: 'menu.forms', name: 'Forms menu', type: 'MENU' },
     { code: 'menu.grids', name: 'Grids menu', type: 'MENU' },
+    { code: 'menu.notifications', name: 'Notifications menu', type: 'MENU' },
+    { code: 'menu.search', name: 'Search menu', type: 'MENU' },
+    { code: 'menu.activity', name: 'Activity menu', type: 'MENU' },
+    { code: 'menu.audit', name: 'Audit menu', type: 'MENU' },
     { code: 'screen.forms', name: 'Form builder', type: 'SCREEN', resource: 'forms', action: 'manage' },
     { code: 'screen.grids', name: 'Grid builder', type: 'SCREEN', resource: 'grids', action: 'manage' },
+    { code: 'screen.notifications', name: 'Notifications screen', type: 'SCREEN', resource: 'notifications', action: 'manage' },
+    { code: 'screen.search', name: 'Search screen', type: 'SCREEN', resource: 'search', action: 'use' },
+    { code: 'screen.activity', name: 'Activity screen', type: 'SCREEN', resource: 'activity', action: 'view' },
+    { code: 'screen.audit', name: 'Audit screen', type: 'SCREEN', resource: 'audit', action: 'view' },
     { code: 'api.forms.write', name: 'Manage forms API', type: 'API', resource: 'forms', action: 'write' },
     { code: 'api.grids.write', name: 'Manage grids API', type: 'API', resource: 'grids', action: 'write' },
+    { code: 'api.notifications.write', name: 'Send notifications API', type: 'API', resource: 'notifications', action: 'write' },
   ];
   for (const p of extraPerms) {
     await prisma.permission.upsert({
@@ -186,11 +195,23 @@ async function main() {
     });
   }
   const extraMenus = [
-    { label: 'Forms', path: '/app/forms', icon: 'form', permissionCode: 'menu.forms', sortOrder: 5 },
-    { label: 'Grids', path: '/app/grids', icon: 'table', permissionCode: 'menu.grids', sortOrder: 6 },
+    { label: 'Search', path: '/app/search', icon: 'search', permissionCode: 'menu.search', sortOrder: 2, group: 'MAIN' },
+    { label: 'Notifications', path: '/app/notifications', icon: 'bell', permissionCode: 'menu.notifications', sortOrder: 3, group: 'MAIN' },
+    { label: 'Activity', path: '/app/activity', icon: 'activity', permissionCode: 'menu.activity', sortOrder: 4, group: 'MAIN' },
+    { label: 'Forms', path: '/app/forms', icon: 'form', permissionCode: 'menu.forms', sortOrder: 5, group: 'ADMIN' },
+    { label: 'Grids', path: '/app/grids', icon: 'table', permissionCode: 'menu.grids', sortOrder: 6, group: 'ADMIN' },
+    { label: 'Audit', path: '/app/audit', icon: 'audit', permissionCode: 'menu.audit', sortOrder: 7, group: 'ADMIN' },
   ];
   const allPermsForMenus = await prisma.permission.findMany({ where: { organizationId: org.id } });
   const permByCode = Object.fromEntries(allPermsForMenus.map((p) => [p.code, p.id]));
+  let mainGroup = await prisma.menuGroup.findFirst({
+    where: { organizationId: org.id, code: 'MAIN' },
+  });
+  if (!mainGroup) {
+    mainGroup = await prisma.menuGroup.create({
+      data: { organizationId: org.id, name: 'Main', code: 'MAIN', sortOrder: 1 },
+    });
+  }
   for (const m of extraMenus) {
     const existingMenu = await prisma.menu.findFirst({
       where: { organizationId: org.id, path: m.path },
@@ -199,7 +220,7 @@ async function main() {
       await prisma.menu.create({
         data: {
           organizationId: org.id,
-          groupId: adminGroup.id,
+          groupId: m.group === 'MAIN' ? mainGroup.id : adminGroup.id,
           label: m.label,
           path: m.path,
           icon: m.icon,
@@ -210,7 +231,7 @@ async function main() {
     }
   }
 
-  // Grant all permissions + menus to ADMIN role
+  // Grant all permissions + menus to ADMIN role; extend MEMBER menus
   {
     const permsNow = await prisma.permission.findMany({ where: { organizationId: org.id } });
     const menusNow = await prisma.menu.findMany({ where: { organizationId: org.id } });
@@ -221,6 +242,42 @@ async function main() {
     await prisma.roleMenu.deleteMany({ where: { roleId: adminRole.id } });
     await prisma.roleMenu.createMany({
       data: menusNow.map((m) => ({ roleId: adminRole!.id, menuId: m.id })),
+    });
+
+    const memberPermCodes = [
+      'menu.overview',
+      'menu.profile',
+      'menu.sessions',
+      'menu.notifications',
+      'menu.search',
+      'menu.activity',
+      'screen.notifications',
+      'screen.search',
+      'screen.activity',
+      'data.users.own',
+    ];
+    await prisma.rolePermission.deleteMany({ where: { roleId: memberRole.id } });
+    await prisma.rolePermission.createMany({
+      data: memberPermCodes
+        .filter((c) => permsNow.some((p) => p.code === c))
+        .map((c) => ({
+          roleId: memberRole!.id,
+          permissionId: permsNow.find((p) => p.code === c)!.id,
+        })),
+    });
+    const memberPaths = [
+      '/app',
+      '/app/profile',
+      '/app/sessions',
+      '/app/notifications',
+      '/app/search',
+      '/app/activity',
+    ];
+    await prisma.roleMenu.deleteMany({ where: { roleId: memberRole.id } });
+    await prisma.roleMenu.createMany({
+      data: menusNow
+        .filter((m) => memberPaths.includes(m.path ?? ''))
+        .map((m) => ({ roleId: memberRole!.id, menuId: m.id })),
     });
   }
 

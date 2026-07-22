@@ -34,8 +34,12 @@ export class FormsController {
 
   @Post()
   @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
-  create(@CurrentOrg() org: OrgContext, @Body() dto: CreateFormDto) {
-    return this.forms.create(org.organizationId, dto);
+  create(
+    @CurrentOrg() org: OrgContext,
+    @CurrentUser() user: JwtPayloadUser,
+    @Body() dto: CreateFormDto,
+  ) {
+    return this.forms.create(org.organizationId, dto, user.userId);
   }
 
   @Post('sections/:sectionId/controls')

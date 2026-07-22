@@ -485,6 +485,61 @@ label.check {
   background: rgba(0, 0, 0, 0.03);
 }
 
+.timeline {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.timeline li {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  background: #fff;
+}
+
+.timeline li.unread {
+  border-color: #2f8c62;
+  box-shadow: inset 3px 0 0 #2f8c62;
+}
+
+.timeline-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.pill {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.pill.ok {
+  border-color: #2f8c62;
+  color: #1f6b4a;
+  background: rgba(47, 140, 98, 0.08);
+}
+
+.nav-badge {
+  margin-left: 0.4rem;
+  background: #c0392b;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  padding: 0.05rem 0.4rem;
+}
+
+.tiny {
+  font-size: 0.75rem;
+}
+
 .widget-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
