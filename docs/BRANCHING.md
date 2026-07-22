@@ -53,10 +53,12 @@ Repo: [LatestDmsWithAkhand](https://github.com/akhandpratapbhu/LatestDmsWithAkha
 - Branch name pattern: `develop`
 - Require a pull request before merging
 - Require status checks to pass:
-  - `Lint & format`
-  - `Build apps`
-  - `Auth smoke test`
-  - `Docker build (verify)`
+  - `Build API`
+  - `Build Web`
+  - `CI Result`
+  - `Lint & format` (optional but recommended)
+  - `Auth smoke test` (optional)
+  - `Docker build (verify)` (optional)
 - Do not allow bypassing (recommended)
 
 ### Rule for `main`

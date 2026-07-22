@@ -1,0 +1,39 @@
+---
+description: Always verify apps/api and apps/web build with npm run build before considering work done
+alwaysApply: true
+---
+
+# Build check rule (api + web)
+
+When changing code under `apps/`, treat the change as incomplete until both apps build successfully.
+
+## Required commands
+
+From the repo root monorepo (preferred):
+
+```bash
+npm run build -w @dms/shared
+npm run build -w @dms/api
+npm run build -w @dms/web
+```
+
+Or the same as running inside each app folder:
+
+```bash
+cd apps/api && npm run build
+cd apps/web && npm run build
+```
+
+## Pass / fail
+
+- If **either** `apps/api` or `apps/web` build fails → fix the error before committing/pushing.
+- Do not tell the user the work is done while a build is failing.
+
+## GitHub Actions
+
+On push / PR, CI runs these same builds as separate jobs:
+
+- **Build API** → `working-directory: apps/api` → `npm run build`
+- **Build Web** → `working-directory: apps/web` → `npm run build`
+
+A red check means build failed; green means both passed.
