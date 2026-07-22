@@ -1,0 +1,170 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    name: Build & push images
+    runs-on: ubuntu-latest
+    outputs:
+      api_image: ${{ steps.meta-api.outputs.tags }}
+      web_image: ${{ steps.meta-web.outputs.tags }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version & image prefix
+        id: meta
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+          # GHCR requires lowercase image names
+          echo "image_prefix=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (API)
+        id: meta-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.meta.outputs.image_prefix }}/api
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
+
+      - name: Docker meta (Web)
+        id: meta-web
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.meta.outputs.image_prefix }}/web
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
+
+      - name: Build & push API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.meta-api.outputs.tags }}
+          labels: ${{ steps.meta-api.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push Web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy staging
+    needs: publish
+    if: |
+      github.ref == 'refs/heads/main' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_APP_URL }}
+    steps:
+      - name: Deploy placeholder
+        env:
+          API_IMAGE: ${{ needs.publish.outputs.api_image }}
+          WEB_IMAGE: ${{ needs.publish.outputs.web_image }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          DEPLOY_HOOK: ${{ secrets.STAGING_DEPLOY_WEBHOOK }}
+        run: |
+          echo "Staging deploy for version: $VERSION"
+          echo "API image tags:"
+          echo "$API_IMAGE"
+          echo "Web image tags:"
+          echo "$WEB_IMAGE"
+
+          if [ -n "$DEPLOY_HOOK" ]; then
+            curl -fsS -X POST "$DEPLOY_HOOK" \
+              -H "Content-Type: application/json" \
+              -d "{\"version\":\"$VERSION\",\"api\":\"$API_IMAGE\",\"web\":\"$WEB_IMAGE\",\"env\":\"staging\"}"
+            echo "Webhook triggered"
+          else
+            echo "No STAGING_DEPLOY_WEBHOOK secret set — images published to GHCR only."
+            echo "Add the secret (and optional STAGING_APP_URL variable) when you have a host."
+          fi
+
+  deploy-production:
+    name: Deploy production
+    needs: publish
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_APP_URL }}
+    steps:
+      - name: Deploy placeholder
+        env:
+          API_IMAGE: ${{ needs.publish.outputs.api_image }}
+          WEB_IMAGE: ${{ needs.publish.outputs.web_image }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          DEPLOY_HOOK: ${{ secrets.PRODUCTION_DEPLOY_WEBHOOK }}
+        run: |
+          echo "Production deploy for version: $VERSION"
+          echo "API image tags:"
+          echo "$API_IMAGE"
+          echo "Web image tags:"
+          echo "$WEB_IMAGE"
+
+          if [ -n "$DEPLOY_HOOK" ]; then
+            curl -fsS -X POST "$DEPLOY_HOOK" \
+              -H "Content-Type: application/json" \
+              -d "{\"version\":\"$VERSION\",\"api\":\"$API_IMAGE\",\"web\":\"$WEB_IMAGE\",\"env\":\"production\"}"
+            echo "Webhook triggered"
+          else
+            echo "No PRODUCTION_DEPLOY_WEBHOOK secret set — images published to GHCR only."
+            echo "Protect the production environment and add the secret when ready."
+          fi
