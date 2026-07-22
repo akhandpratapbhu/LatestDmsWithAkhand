@@ -10,10 +10,24 @@ export type ApiEnvelope<T> = {
 
 let accessToken: string | null = localStorage.getItem('dms_access_token');
 let refreshToken: string | null = localStorage.getItem('dms_refresh_token');
+let organizationId: string | null = localStorage.getItem('dms_organization_id');
 let refreshPromise: Promise<boolean> | null = null;
 
 export function getAccessToken(): string | null {
   return accessToken;
+}
+
+export function getOrganizationId(): string | null {
+  return organizationId;
+}
+
+export function setOrganizationId(id: string | null): void {
+  organizationId = id;
+  if (id) {
+    localStorage.setItem('dms_organization_id', id);
+  } else {
+    localStorage.removeItem('dms_organization_id');
+  }
 }
 
 export function setTokens(access: string, refresh: string): void {
@@ -26,8 +40,10 @@ export function setTokens(access: string, refresh: string): void {
 export function clearTokens(): void {
   accessToken = null;
   refreshToken = null;
+  organizationId = null;
   localStorage.removeItem('dms_access_token');
   localStorage.removeItem('dms_refresh_token');
+  localStorage.removeItem('dms_organization_id');
 }
 
 async function tryRefresh(): Promise<boolean> {
@@ -62,13 +78,22 @@ async function tryRefresh(): Promise<boolean> {
   return refreshPromise;
 }
 
-export async function api<T>(path: string, options: RequestInit = {}, auth = true): Promise<T> {
+export async function api<T>(
+  path: string,
+  options: RequestInit = {},
+  auth = true,
+  withOrg = false,
+): Promise<T> {
   const headers = new Headers(options.headers);
-  if (!headers.has('Content-Type') && options.body) {
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (!headers.has('Content-Type') && options.body && !isFormData) {
     headers.set('Content-Type', 'application/json');
   }
   if (auth && accessToken) {
     headers.set('Authorization', `Bearer ${accessToken}`);
+  }
+  if (withOrg && organizationId) {
+    headers.set('X-Organization-Id', organizationId);
   }
 
   let res = await fetch(`${API_URL}${path}`, { ...options, headers });
@@ -90,4 +115,8 @@ export async function api<T>(path: string, options: RequestInit = {}, auth = tru
   }
 
   return json.data as T;
+}
+
+export function orgApi<T>(path: string, options: RequestInit = {}): Promise<T> {
+  return api<T>(path, options, true, true);
 }
