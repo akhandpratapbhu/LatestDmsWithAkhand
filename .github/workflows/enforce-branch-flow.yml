@@ -1,0 +1,44 @@
+name: Enforce branch flow
+
+# Blocks wrong PR targets:
+# - feature/* → develop  ✅
+# - develop → main       ✅
+# - feature/* → main     ❌ (main me sirf develop se merge)
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+jobs:
+  branch-flow:
+    name: Branch flow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check allowed PR source → target
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+        run: |
+          echo "PR: ${HEAD} → ${BASE}"
+
+          if [ "$BASE" = "main" ] && [ "$HEAD" != "develop" ]; then
+            echo ""
+            echo "❌ Blocked: main me direct feature branch merge allowed nahi hai."
+            echo "   Allowed: develop → main only"
+            echo "   Aapka PR: ${HEAD} → main"
+            echo ""
+            echo "Pehle feature ko develop me merge karo, phir develop → main PR banao."
+            exit 1
+          fi
+
+          if [ "$BASE" = "develop" ]; then
+            echo "✅ Allowed: ${HEAD} → develop (feature / fix PR)"
+            exit 0
+          fi
+
+          if [ "$BASE" = "main" ] && [ "$HEAD" = "develop" ]; then
+            echo "✅ Allowed: develop → main (release PR)"
+            exit 0
+          fi
+
+          echo "✅ PR target OK"
