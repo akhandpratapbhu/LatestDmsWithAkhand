@@ -5,7 +5,8 @@ export function DashboardPage() {
   const { user, logout } = useAuth();
 
   return (
-    <section className="panel">
+    <section className="panel"> 
+    {/* //test comment */}
       <h1>Welcome, {user?.firstName}</h1>
       <p className="lede">
         You are signed in as <strong>{user?.email}</strong>. Email verified:{' '}
