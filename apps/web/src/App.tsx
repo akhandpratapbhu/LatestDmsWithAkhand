@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './features/auth/auth-context';
 import { OrgProvider } from './features/org/org-context';
+import { IamProvider } from './features/iam/iam-context';
 import { LoginPage } from './features/auth/pages/LoginPage';
 import { RegisterPage } from './features/auth/pages/RegisterPage';
 import { ForgotPasswordPage } from './features/auth/pages/ForgotPasswordPage';
@@ -14,6 +15,8 @@ import { OrganizationPage } from './features/org/pages/OrganizationPage';
 import { UsersPage } from './features/users/pages/UsersPage';
 import { ProfilePage } from './features/users/pages/ProfilePage';
 import { AcceptInvitePage } from './features/users/pages/AcceptInvitePage';
+import { IamPage } from './features/iam/pages/IamPage';
+import { DashboardsAdminPage } from './features/dashboards/pages/DashboardsAdminPage';
 import { AuthLayout } from './components/AuthLayout';
 import { AppShell } from './components/AppShell';
 
@@ -25,7 +28,11 @@ function Protected({ children }: { children: ReactNode }) {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-  return <OrgProvider>{children}</OrgProvider>;
+  return (
+    <OrgProvider>
+      <IamProvider>{children}</IamProvider>
+    </OrgProvider>
+  );
 }
 
 function Guest({ children }: { children: ReactNode }) {
@@ -70,6 +77,8 @@ export function App() {
         <Route path="/app" element={<DashboardPage />} />
         <Route path="/app/organization" element={<OrganizationPage />} />
         <Route path="/app/users" element={<UsersPage />} />
+        <Route path="/app/iam" element={<IamPage />} />
+        <Route path="/app/dashboards" element={<DashboardsAdminPage />} />
         <Route path="/app/profile" element={<ProfilePage />} />
         <Route path="/app/sessions" element={<SessionsPage />} />
       </Route>
