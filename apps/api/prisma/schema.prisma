@@ -7,36 +7,63 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum UserAccountStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  DEACTIVATED
+}
+
 model User {
-  id              String    @id @default(uuid())
-  email           String    @unique
+  id              String            @id @default(uuid())
+  email           String            @unique
   passwordHash    String
   firstName       String
   lastName        String
-  emailVerified   Boolean   @default(false)
+  phone           String?
+  avatarUrl       String?
+  emailVerified   Boolean           @default(false)
   emailVerifiedAt DateTime?
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  isActive        Boolean           @default(true)
+  status          UserAccountStatus @default(ACTIVE)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
-  sessions           Session[]
-  refreshTokens      RefreshToken[]
+  sessions            Session[]
+  refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
-  emailTokens        EmailVerificationToken[]
+  emailTokens         EmailVerificationToken[]
+  memberships         OrganizationMember[]
+  ownedOrganizations  Organization[]           @relation("OrgOwner")
+  invitesSent         UserInvite[]             @relation("InviteSender")
+  invitesReceived     UserInvite[]             @relation("InviteReceiver")
 
   @@map("users")
 }
 
 model Session {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   userId       String
   deviceName   String?
   userAgent    String?
   ipAddress    String?
-  lastActiveAt DateTime @default(now())
+  lastActiveAt DateTime  @default(now())
   revokedAt    DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   refreshTokens RefreshToken[]
@@ -88,4 +115,201 @@ model EmailVerificationToken {
 
   @@index([userId])
   @@map("email_verification_tokens")
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  code      String?
+  isActive  Boolean  @default(true)
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner         User                 @relation("OrgOwner", fields: [ownerId], references: [id])
+  members       OrganizationMember[]
+  branches      Branch[]
+  departments   Department[]
+  designations  Designation[]
+  teams         Team[]
+  costCenters   CostCenter[]
+  passwordPolicy PasswordPolicy?
+  invites       UserInvite[]
+
+  @@index([ownerId])
+  @@map("organizations")
+}
+
+model Branch {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  code           String
+  address        String?
+  city           String?
+  country        String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departments  Department[]
+  teams        Team[]
+  costCenters  CostCenter[]
+  members      OrganizationMember[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("branches")
+}
+
+model Department {
+  id             String   @id @default(uuid())
+  organizationId String
+  branchId       String?
+  name           String
+  code           String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch       Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  teams        Team[]
+  members      OrganizationMember[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([branchId])
+  @@map("departments")
+}
+
+model Designation {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  code           String
+  level          Int      @default(1)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      OrganizationMember[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("designations")
+}
+
+model Team {
+  id             String   @id @default(uuid())
+  organizationId String
+  branchId       String?
+  departmentId   String?
+  name           String
+  code           String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch       Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  department   Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  members      OrganizationMember[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("teams")
+}
+
+model CostCenter {
+  id             String   @id @default(uuid())
+  organizationId String
+  branchId       String?
+  name           String
+  code           String
+  description    String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch       Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  members      OrganizationMember[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("cost_centers")
+}
+
+model OrganizationMember {
+  id             String           @id @default(uuid())
+  organizationId String
+  userId         String
+  role           OrgRole          @default(MEMBER)
+  status         MembershipStatus @default(ACTIVE)
+  branchId       String?
+  departmentId   String?
+  designationId  String?
+  teamId         String?
+  costCenterId   String?
+  joinedAt       DateTime         @default(now())
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  designation  Designation? @relation(fields: [designationId], references: [id], onDelete: SetNull)
+  team         Team?        @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  costCenter   CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("organization_members")
+}
+
+model UserInvite {
+  id             String    @id @default(uuid())
+  organizationId String
+  email          String
+  role           OrgRole   @default(MEMBER)
+  tokenHash      String    @unique
+  invitedById    String
+  userId         String?
+  branchId       String?
+  departmentId   String?
+  designationId  String?
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InviteSender", fields: [invitedById], references: [id])
+  user         User?        @relation("InviteReceiver", fields: [userId], references: [id])
+
+  @@index([organizationId, email])
+  @@map("user_invites")
+}
+
+model PasswordPolicy {
+  id                 String   @id @default(uuid())
+  organizationId     String   @unique
+  minLength          Int      @default(8)
+  requireUppercase   Boolean  @default(true)
+  requireLowercase   Boolean  @default(true)
+  requireNumber      Boolean  @default(true)
+  requireSpecialChar Boolean  @default(false)
+  passwordHistory    Int      @default(0)
+  maxAgeDays         Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("password_policies")
 }
