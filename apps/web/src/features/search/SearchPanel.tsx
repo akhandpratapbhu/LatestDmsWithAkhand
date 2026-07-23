@@ -1,7 +1,7 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { orgApi } from '../../../lib/api';
-import { useOrg } from '../../org/org-context';
+import { orgApi } from '../../lib/api';
+import { useOrg } from '../org/org-context';
 
 type SearchHit = {
   type: string;
@@ -18,8 +18,14 @@ type SavedSearch = {
   scope: string;
 };
 
-export function SearchPage() {
+type SearchPanelProps = {
+  autoFocus?: boolean;
+  onNavigate?: () => void;
+};
+
+export function SearchPanel({ autoFocus = false, onNavigate }: SearchPanelProps) {
   const { currentOrg } = useOrg();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState('');
   const [scope, setScope] = useState('ALL');
   const [results, setResults] = useState<SearchHit[]>([]);
@@ -37,6 +43,10 @@ export function SearchPage() {
     if (!currentOrg) return;
     void loadSaved().catch((e) => setError(e instanceof Error ? e.message : 'Failed'));
   }, [currentOrg?.id]);
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
 
   async function runSearch(query = q, nextScope = scope) {
     const data = await orgApi<{ results: SearchHit[] }>(
@@ -72,19 +82,11 @@ export function SearchPage() {
   }
 
   if (!currentOrg) {
-    return (
-      <section className="panel">
-        <h1>Search</h1>
-        <p className="lede">Select an organization first.</p>
-      </section>
-    );
+    return <p className="lede">Select an organization first.</p>;
   }
 
   return (
-    <section className="panel">
-      <h1>Universal Search</h1>
-      <p className="lede">Global search across users, forms, grids, org entities, and dashboards.</p>
-
+    <div className="search-panel">
       {error && <div className="alert error">{error}</div>}
       {message && <div className="alert success">{message}</div>}
 
@@ -92,7 +94,13 @@ export function SearchPage() {
         <div className="row-2">
           <label>
             Query
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" required />
+            <input
+              ref={inputRef}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search users, forms, grids…"
+              required
+            />
           </label>
           <label>
             Scope
@@ -115,43 +123,49 @@ export function SearchPage() {
 
       <form className="auth-form compact" onSubmit={(e) => void saveSearch(e)}>
         <h2>Save this search</h2>
-        <label>
-          Name
-          <input required value={saveName} onChange={(e) => setSaveName(e.target.value)} />
-        </label>
-        <button className="btn secondary" type="submit" disabled={!q}>
-          Save
-        </button>
+        <div className="search-save-row">
+          <input
+            required
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            placeholder="Saved search name"
+          />
+          <button className="btn secondary" type="submit" disabled={!q}>
+            Save
+          </button>
+        </div>
       </form>
 
-      <div className="action-row">
-        {saved.map((s) => (
-          <button
-            key={s.id}
-            className="btn ghost"
-            type="button"
-            onClick={() => {
-              setQ(s.query);
-              setScope(s.scope);
-              void runSearch(s.query, s.scope);
-            }}
-          >
-            {s.name}
-            <span
-              className="tiny"
-              onClick={(e) => {
-                e.stopPropagation();
-                void deleteSaved(s.id);
+      {saved.length > 0 && (
+        <div className="action-row wrap">
+          {saved.map((s) => (
+            <button
+              key={s.id}
+              className="btn ghost sm"
+              type="button"
+              onClick={() => {
+                setQ(s.query);
+                setScope(s.scope);
+                void runSearch(s.query, s.scope);
               }}
             >
-              {' '}
-              ×
-            </span>
-          </button>
-        ))}
-      </div>
+              {s.name}
+              <span
+                className="tiny"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void deleteSaved(s.id);
+                }}
+              >
+                {' '}
+                ×
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
-      <h2>Results ({results.length})</h2>
+      <h2 className="search-results-title">Results ({results.length})</h2>
       <ul className="timeline">
         {results.map((r) => (
           <li key={`${r.type}-${r.id}`}>
@@ -160,7 +174,7 @@ export function SearchPage() {
                 [{r.type}] {r.title}
               </strong>
               {r.path && (
-                <Link to={r.path} className="muted">
+                <Link to={r.path} className="muted" onClick={() => onNavigate?.()}>
                   Open
                 </Link>
               )}
@@ -168,8 +182,8 @@ export function SearchPage() {
             {r.subtitle && <p className="muted">{r.subtitle}</p>}
           </li>
         ))}
-        {!results.length && <li className="muted">No results.</li>}
+        {!results.length && <li className="muted">No results yet. Type a query and search.</li>}
       </ul>
-    </section>
+    </div>
   );
 }

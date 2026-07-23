@@ -193,48 +193,90 @@ async function main() {
     });
   }
 
-  let adminGroup = await prisma.menuGroup.findFirst({
-    where: { organizationId: org.id, code: 'ADMIN' },
-  });
-  if (!adminGroup) {
-    adminGroup = await prisma.menuGroup.create({
-      data: { organizationId: org.id, name: 'Administration', code: 'ADMIN', sortOrder: 2 },
+  // Reorganize sidebar groups for enterprise IA
+  const ensureGroup = async (code: string, name: string, sortOrder: number) => {
+    const existing = await prisma.menuGroup.findFirst({
+      where: { organizationId: org.id, code },
     });
-  }
-  const extraMenus = [
-    { label: 'Search', path: '/app/search', icon: 'search', permissionCode: 'menu.search', sortOrder: 2, group: 'MAIN' },
-    { label: 'Chat', path: '/app/chat', icon: 'chat', permissionCode: 'menu.chat', sortOrder: 3, group: 'MAIN' },
-    { label: 'Calls', path: '/app/calls', icon: 'phone', permissionCode: 'menu.calls', sortOrder: 4, group: 'MAIN' },
-    { label: 'Notifications', path: '/app/notifications', icon: 'bell', permissionCode: 'menu.notifications', sortOrder: 5, group: 'MAIN' },
-    { label: 'Activity', path: '/app/activity', icon: 'activity', permissionCode: 'menu.activity', sortOrder: 6, group: 'MAIN' },
-    { label: 'Masters', path: '/app/masters', icon: 'database', permissionCode: 'menu.masters', sortOrder: 3, group: 'ADMIN' },
-    { label: 'Forms', path: '/app/forms', icon: 'form', permissionCode: 'menu.forms', sortOrder: 6, group: 'ADMIN' },
-    { label: 'Grids', path: '/app/grids', icon: 'table', permissionCode: 'menu.grids', sortOrder: 7, group: 'ADMIN' },
-    { label: 'Audit', path: '/app/audit', icon: 'audit', permissionCode: 'menu.audit', sortOrder: 8, group: 'ADMIN' },
+    if (existing) {
+      return prisma.menuGroup.update({
+        where: { id: existing.id },
+        data: { name, sortOrder, isActive: true },
+      });
+    }
+    return prisma.menuGroup.create({
+      data: { organizationId: org.id, name, code, sortOrder, isActive: true },
+    });
+  };
+
+  const mainGroup = await ensureGroup('MAIN', 'Main (Workspace)', 1);
+  const accessGroup = await ensureGroup('ACCESS', 'Access Control', 2);
+  const configGroup = await ensureGroup('CONFIG', 'Configuration', 3);
+  const governanceGroup = await ensureGroup('GOVERNANCE', 'Governance / Compliance', 4);
+
+  // Legacy ADMIN group — hide if present
+  await prisma.menuGroup.updateMany({
+    where: { organizationId: org.id, code: 'ADMIN' },
+    data: { isActive: false, name: 'Administration (legacy)', sortOrder: 99 },
+  });
+
+  const menuLayout: Array<{
+    path: string;
+    label: string;
+    icon: string;
+    permissionCode: string;
+    groupId: string;
+    sortOrder: number;
+    isActive?: boolean;
+  }> = [
+    { path: '/app', label: 'Overview', icon: 'home', permissionCode: 'menu.overview', groupId: mainGroup.id, sortOrder: 1 },
+    { path: '/app/sessions', label: 'Sessions', icon: 'shield', permissionCode: 'menu.sessions', groupId: mainGroup.id, sortOrder: 2 },
+    { path: '/app/chat', label: 'Chat', icon: 'chat', permissionCode: 'menu.chat', groupId: mainGroup.id, sortOrder: 3 },
+    { path: '/app/calls', label: 'Calls history', icon: 'phone', permissionCode: 'menu.calls', groupId: mainGroup.id, sortOrder: 4 },
+    { path: '/app/activity', label: 'Activity', icon: 'activity', permissionCode: 'menu.activity', groupId: mainGroup.id, sortOrder: 5 },
+    { path: '/app/organization', label: 'Organization', icon: 'building', permissionCode: 'menu.organization', groupId: accessGroup.id, sortOrder: 1 },
+    { path: '/app/users', label: 'Users', icon: 'users', permissionCode: 'menu.users', groupId: accessGroup.id, sortOrder: 2 },
+    { path: '/app/iam', label: 'IAM', icon: 'key', permissionCode: 'menu.iam', groupId: accessGroup.id, sortOrder: 3 },
+    { path: '/app/masters', label: 'Masters', icon: 'database', permissionCode: 'menu.masters', groupId: configGroup.id, sortOrder: 1 },
+    { path: '/app/forms', label: 'Forms', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 2 },
+    { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: configGroup.id, sortOrder: 3 },
+    { path: '/app/dashboards', label: 'Dashboards', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, sortOrder: 4 },
+    { path: '/app/audit', label: 'Audit', icon: 'audit', permissionCode: 'menu.audit', groupId: governanceGroup.id, sortOrder: 1 },
+    // Header-only surfaces
+    { path: '/app/search', label: 'Search', icon: 'search', permissionCode: 'menu.search', groupId: mainGroup.id, sortOrder: 90, isActive: false },
+    { path: '/app/notifications', label: 'Notifications', icon: 'bell', permissionCode: 'menu.notifications', groupId: mainGroup.id, sortOrder: 91, isActive: false },
+    { path: '/app/profile', label: 'Profile', icon: 'user', permissionCode: 'menu.profile', groupId: mainGroup.id, sortOrder: 92, isActive: false },
   ];
+
   const allPermsForMenus = await prisma.permission.findMany({ where: { organizationId: org.id } });
   const permByCode = Object.fromEntries(allPermsForMenus.map((p) => [p.code, p.id]));
-  let mainGroup = await prisma.menuGroup.findFirst({
-    where: { organizationId: org.id, code: 'MAIN' },
-  });
-  if (!mainGroup) {
-    mainGroup = await prisma.menuGroup.create({
-      data: { organizationId: org.id, name: 'Main', code: 'MAIN', sortOrder: 1 },
-    });
-  }
-  for (const m of extraMenus) {
+
+  for (const m of menuLayout) {
     const existingMenu = await prisma.menu.findFirst({
       where: { organizationId: org.id, path: m.path },
     });
-    if (!existingMenu) {
+    if (existingMenu) {
+      await prisma.menu.update({
+        where: { id: existingMenu.id },
+        data: {
+          label: m.label,
+          icon: m.icon,
+          groupId: m.groupId,
+          sortOrder: m.sortOrder,
+          isActive: m.isActive ?? true,
+          permissionId: permByCode[m.permissionCode] ?? existingMenu.permissionId,
+        },
+      });
+    } else {
       await prisma.menu.create({
         data: {
           organizationId: org.id,
-          groupId: m.group === 'MAIN' ? mainGroup.id : adminGroup.id,
+          groupId: m.groupId,
           label: m.label,
           path: m.path,
           icon: m.icon,
           sortOrder: m.sortOrder,
+          isActive: m.isActive ?? true,
           permissionId: permByCode[m.permissionCode],
         },
       });

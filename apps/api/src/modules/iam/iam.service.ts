@@ -37,6 +37,7 @@ export class IamService {
     });
     if (!member) return;
     await this.seed.seedOrganization(organizationId, member.id);
+    await this.seed.syncMenuLayout(organizationId);
   }
 
   async listRoles(organizationId: string) {

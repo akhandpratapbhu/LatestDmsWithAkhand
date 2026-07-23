@@ -20,7 +20,6 @@ import { DashboardsAdminPage } from './features/dashboards/pages/DashboardsAdmin
 import { FormsPage } from './features/forms/pages/FormsPage';
 import { GridsPage } from './features/grids/pages/GridsPage';
 import { NotificationsPage } from './features/notifications/pages/NotificationsPage';
-import { SearchPage } from './features/search/pages/SearchPage';
 import { ActivityPage, AuditPage } from './features/audit/pages/ActivityAuditPages';
 import { MastersPage } from './features/masters/pages/MastersPage';
 import { ChatPage } from './features/chat/pages/ChatPage';
@@ -90,7 +89,6 @@ export function App() {
         <Route path="/app/forms" element={<FormsPage />} />
         <Route path="/app/grids" element={<GridsPage />} />
         <Route path="/app/notifications" element={<NotificationsPage />} />
-        <Route path="/app/search" element={<SearchPage />} />
         <Route path="/app/activity" element={<ActivityPage />} />
         <Route path="/app/audit" element={<AuditPage />} />
         <Route path="/app/masters" element={<MastersPage />} />

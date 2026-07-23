@@ -121,10 +121,16 @@ export class IamSeedService {
       });
 
       const mainGroup = await tx.menuGroup.create({
-        data: { organizationId, name: 'Main', code: 'MAIN', sortOrder: 1 },
+        data: { organizationId, name: 'Main (Workspace)', code: 'MAIN', sortOrder: 1 },
       });
-      const adminGroup = await tx.menuGroup.create({
-        data: { organizationId, name: 'Administration', code: 'ADMIN', sortOrder: 2 },
+      const accessGroup = await tx.menuGroup.create({
+        data: { organizationId, name: 'Access Control', code: 'ACCESS', sortOrder: 2 },
+      });
+      const configGroup = await tx.menuGroup.create({
+        data: { organizationId, name: 'Configuration', code: 'CONFIG', sortOrder: 3 },
+      });
+      const governanceGroup = await tx.menuGroup.create({
+        data: { organizationId, name: 'Governance / Compliance', code: 'GOVERNANCE', sortOrder: 4 },
       });
 
       const menuDefs: Array<{
@@ -134,23 +140,29 @@ export class IamSeedService {
         groupId: string;
         permissionCode: string;
         sortOrder: number;
+        isActive?: boolean;
       }> = [
+        // Main (Workspace)
         { label: 'Overview', path: '/app', icon: 'home', groupId: mainGroup.id, permissionCode: 'menu.overview', sortOrder: 1 },
-        { label: 'Search', path: '/app/search', icon: 'search', groupId: mainGroup.id, permissionCode: 'menu.search', sortOrder: 2 },
+        { label: 'Sessions', path: '/app/sessions', icon: 'shield', groupId: mainGroup.id, permissionCode: 'menu.sessions', sortOrder: 2 },
         { label: 'Chat', path: '/app/chat', icon: 'chat', groupId: mainGroup.id, permissionCode: 'menu.chat', sortOrder: 3 },
-        { label: 'Calls', path: '/app/calls', icon: 'phone', groupId: mainGroup.id, permissionCode: 'menu.calls', sortOrder: 4 },
-        { label: 'Notifications', path: '/app/notifications', icon: 'bell', groupId: mainGroup.id, permissionCode: 'menu.notifications', sortOrder: 5 },
-        { label: 'Activity', path: '/app/activity', icon: 'activity', groupId: mainGroup.id, permissionCode: 'menu.activity', sortOrder: 6 },
-        { label: 'Profile', path: '/app/profile', icon: 'user', groupId: mainGroup.id, permissionCode: 'menu.profile', sortOrder: 7 },
-        { label: 'Sessions', path: '/app/sessions', icon: 'shield', groupId: mainGroup.id, permissionCode: 'menu.sessions', sortOrder: 8 },
-        { label: 'Organization', path: '/app/organization', icon: 'building', groupId: adminGroup.id, permissionCode: 'menu.organization', sortOrder: 1 },
-        { label: 'Users', path: '/app/users', icon: 'users', groupId: adminGroup.id, permissionCode: 'menu.users', sortOrder: 2 },
-        { label: 'Masters', path: '/app/masters', icon: 'database', groupId: adminGroup.id, permissionCode: 'menu.masters', sortOrder: 3 },
-        { label: 'IAM', path: '/app/iam', icon: 'key', groupId: adminGroup.id, permissionCode: 'menu.iam', sortOrder: 4 },
-        { label: 'Dashboards', path: '/app/dashboards', icon: 'layout', groupId: adminGroup.id, permissionCode: 'menu.dashboards', sortOrder: 5 },
-        { label: 'Forms', path: '/app/forms', icon: 'form', groupId: adminGroup.id, permissionCode: 'menu.forms', sortOrder: 6 },
-        { label: 'Grids', path: '/app/grids', icon: 'table', groupId: adminGroup.id, permissionCode: 'menu.grids', sortOrder: 7 },
-        { label: 'Audit', path: '/app/audit', icon: 'audit', groupId: adminGroup.id, permissionCode: 'menu.audit', sortOrder: 8 },
+        { label: 'Calls history', path: '/app/calls', icon: 'phone', groupId: mainGroup.id, permissionCode: 'menu.calls', sortOrder: 4 },
+        { label: 'Activity', path: '/app/activity', icon: 'activity', groupId: mainGroup.id, permissionCode: 'menu.activity', sortOrder: 5 },
+        // Access Control
+        { label: 'Organization', path: '/app/organization', icon: 'building', groupId: accessGroup.id, permissionCode: 'menu.organization', sortOrder: 1 },
+        { label: 'Users', path: '/app/users', icon: 'users', groupId: accessGroup.id, permissionCode: 'menu.users', sortOrder: 2 },
+        { label: 'IAM', path: '/app/iam', icon: 'key', groupId: accessGroup.id, permissionCode: 'menu.iam', sortOrder: 3 },
+        // Configuration / Builder
+        { label: 'Masters', path: '/app/masters', icon: 'database', groupId: configGroup.id, permissionCode: 'menu.masters', sortOrder: 1 },
+        { label: 'Forms', path: '/app/forms', icon: 'form', groupId: configGroup.id, permissionCode: 'menu.forms', sortOrder: 2 },
+        { label: 'Grids', path: '/app/grids', icon: 'table', groupId: configGroup.id, permissionCode: 'menu.grids', sortOrder: 3 },
+        { label: 'Dashboards', path: '/app/dashboards', icon: 'layout', groupId: configGroup.id, permissionCode: 'menu.dashboards', sortOrder: 4 },
+        // Governance
+        { label: 'Audit', path: '/app/audit', icon: 'audit', groupId: governanceGroup.id, permissionCode: 'menu.audit', sortOrder: 1 },
+        // Header-only (kept for permissions / deep links, hidden from sidebar)
+        { label: 'Search', path: '/app/search', icon: 'search', groupId: mainGroup.id, permissionCode: 'menu.search', sortOrder: 90, isActive: false },
+        { label: 'Notifications', path: '/app/notifications', icon: 'bell', groupId: mainGroup.id, permissionCode: 'menu.notifications', sortOrder: 91, isActive: false },
+        { label: 'Profile', path: '/app/profile', icon: 'user', groupId: mainGroup.id, permissionCode: 'menu.profile', sortOrder: 92, isActive: false },
       ];
 
       const createdMenus = [];
@@ -163,6 +175,7 @@ export class IamSeedService {
             path: m.path,
             icon: m.icon,
             sortOrder: m.sortOrder,
+            isActive: m.isActive ?? true,
             permissionId: byCode[m.permissionCode],
           },
         });
@@ -173,16 +186,9 @@ export class IamSeedService {
         data: createdMenus.map((m) => ({ roleId: adminRole.id, menuId: m.id })),
       });
       const memberMenus = createdMenus.filter((m) =>
-        [
-          '/app',
-          '/app/profile',
-          '/app/sessions',
-          '/app/notifications',
-          '/app/search',
-          '/app/activity',
-          '/app/chat',
-          '/app/calls',
-        ].includes(m.path ?? ''),
+        ['/app', '/app/sessions', '/app/activity', '/app/chat', '/app/calls', '/app/profile', '/app/notifications', '/app/search'].includes(
+          m.path ?? '',
+        ),
       );
       await tx.roleMenu.createMany({
         data: memberMenus.map((m) => ({ roleId: memberRole.id, menuId: m.id })),
@@ -299,5 +305,95 @@ export class IamSeedService {
         ],
       });
     });
+  }
+
+  /** Idempotent sidebar IA sync for existing organizations. */
+  async syncMenuLayout(organizationId: string): Promise<void> {
+    const ensureGroup = async (code: string, name: string, sortOrder: number) => {
+      const existing = await this.prisma.menuGroup.findFirst({
+        where: { organizationId, code },
+      });
+      if (existing) {
+        return this.prisma.menuGroup.update({
+          where: { id: existing.id },
+          data: { name, sortOrder, isActive: true },
+        });
+      }
+      return this.prisma.menuGroup.create({
+        data: { organizationId, name, code, sortOrder, isActive: true },
+      });
+    };
+
+    const mainGroup = await ensureGroup('MAIN', 'Main (Workspace)', 1);
+    const accessGroup = await ensureGroup('ACCESS', 'Access Control', 2);
+    const configGroup = await ensureGroup('CONFIG', 'Configuration', 3);
+    const governanceGroup = await ensureGroup('GOVERNANCE', 'Governance / Compliance', 4);
+
+    await this.prisma.menuGroup.updateMany({
+      where: { organizationId, code: 'ADMIN' },
+      data: { isActive: false, name: 'Administration (legacy)', sortOrder: 99 },
+    });
+
+    const menuLayout: Array<{
+      path: string;
+      label: string;
+      icon: string;
+      permissionCode: string;
+      groupId: string;
+      sortOrder: number;
+      isActive?: boolean;
+    }> = [
+      { path: '/app', label: 'Overview', icon: 'home', permissionCode: 'menu.overview', groupId: mainGroup.id, sortOrder: 1 },
+      { path: '/app/sessions', label: 'Sessions', icon: 'shield', permissionCode: 'menu.sessions', groupId: mainGroup.id, sortOrder: 2 },
+      { path: '/app/chat', label: 'Chat', icon: 'chat', permissionCode: 'menu.chat', groupId: mainGroup.id, sortOrder: 3 },
+      { path: '/app/calls', label: 'Calls history', icon: 'phone', permissionCode: 'menu.calls', groupId: mainGroup.id, sortOrder: 4 },
+      { path: '/app/activity', label: 'Activity', icon: 'activity', permissionCode: 'menu.activity', groupId: mainGroup.id, sortOrder: 5 },
+      { path: '/app/organization', label: 'Organization', icon: 'building', permissionCode: 'menu.organization', groupId: accessGroup.id, sortOrder: 1 },
+      { path: '/app/users', label: 'Users', icon: 'users', permissionCode: 'menu.users', groupId: accessGroup.id, sortOrder: 2 },
+      { path: '/app/iam', label: 'IAM', icon: 'key', permissionCode: 'menu.iam', groupId: accessGroup.id, sortOrder: 3 },
+      { path: '/app/masters', label: 'Masters', icon: 'database', permissionCode: 'menu.masters', groupId: configGroup.id, sortOrder: 1 },
+      { path: '/app/forms', label: 'Forms', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 2 },
+      { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: configGroup.id, sortOrder: 3 },
+      { path: '/app/dashboards', label: 'Dashboards', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, sortOrder: 4 },
+      { path: '/app/audit', label: 'Audit', icon: 'audit', permissionCode: 'menu.audit', groupId: governanceGroup.id, sortOrder: 1 },
+      { path: '/app/search', label: 'Search', icon: 'search', permissionCode: 'menu.search', groupId: mainGroup.id, sortOrder: 90, isActive: false },
+      { path: '/app/notifications', label: 'Notifications', icon: 'bell', permissionCode: 'menu.notifications', groupId: mainGroup.id, sortOrder: 91, isActive: false },
+      { path: '/app/profile', label: 'Profile', icon: 'user', permissionCode: 'menu.profile', groupId: mainGroup.id, sortOrder: 92, isActive: false },
+    ];
+
+    const perms = await this.prisma.permission.findMany({ where: { organizationId } });
+    const byCode = Object.fromEntries(perms.map((p) => [p.code, p.id]));
+
+    for (const m of menuLayout) {
+      const existing = await this.prisma.menu.findFirst({
+        where: { organizationId, path: m.path },
+      });
+      if (existing) {
+        await this.prisma.menu.update({
+          where: { id: existing.id },
+          data: {
+            label: m.label,
+            icon: m.icon,
+            groupId: m.groupId,
+            sortOrder: m.sortOrder,
+            isActive: m.isActive ?? true,
+            permissionId: byCode[m.permissionCode] ?? existing.permissionId,
+          },
+        });
+      } else if (byCode[m.permissionCode]) {
+        await this.prisma.menu.create({
+          data: {
+            organizationId,
+            groupId: m.groupId,
+            label: m.label,
+            path: m.path,
+            icon: m.icon,
+            sortOrder: m.sortOrder,
+            isActive: m.isActive ?? true,
+            permissionId: byCode[m.permissionCode],
+          },
+        });
+      }
+    }
   }
 }
