@@ -1417,11 +1417,25 @@ label.check {
   margin-right: 0.25rem;
 }
 
-.file-btn {
-  position: relative;
-  overflow: hidden;
-  cursor: pointer;
+.users-grid-user {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 160px;
 }
+
+.users-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.data-table.users-grid th,
+.data-table.users-grid td {
+  white-space: nowrap;
+}
+
 
 
 .messenger-side,

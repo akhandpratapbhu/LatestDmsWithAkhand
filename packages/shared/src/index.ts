@@ -163,6 +163,11 @@ export type OrgUserDto = {
   role: OrgRole;
   status: MembershipStatus;
   accountStatus: UserAccountStatus;
+  emailVerified: boolean;
+  emailVerifiedAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
   branchId: string | null;
   departmentId: string | null;
   designationId: string | null;

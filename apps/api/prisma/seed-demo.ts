@@ -102,6 +102,17 @@ async function main() {
   const managerMember = await ensureMember(manager.id, 'MEMBER');
   const memberMember = await ensureMember(member.id, 'MEMBER');
 
+  // Attach every DB user to Demo Company so Users grid matches `users` table
+  const allDbUsers = await prisma.user.findMany({ select: { id: true } });
+  for (const u of allDbUsers) {
+    const existing = await prisma.organizationMember.findUnique({
+      where: { organizationId_userId: { organizationId: org.id, userId: u.id } },
+    });
+    if (!existing) {
+      await ensureMember(u.id, 'MEMBER');
+    }
+  }
+
   // Branches for org page
   await prisma.branch.upsert({
     where: { organizationId_code: { organizationId: org.id, code: 'HQ' } },
