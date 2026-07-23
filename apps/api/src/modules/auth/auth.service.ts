@@ -6,7 +6,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { LoginResponse, MessageResponse, SessionInfo } from '@dms/shared';
+import {
+  ForgotPasswordResetTokenResponse,
+  LoginResponse,
+  MessageResponse,
+  SessionInfo,
+} from '@dms/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../../mail/mail.service';
 import { UsersService } from '../users/users.service';
@@ -19,6 +24,7 @@ import {
   RegisterDto,
   ResetPasswordDto,
   VerifyEmailDto,
+  VerifyForgotPasswordOtpDto,
   VerifyOtpDto,
 } from './dto/auth.dto';
 import { AuditService } from '../audit/audit.service';
@@ -184,12 +190,32 @@ export class AuthService {
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<MessageResponse> {
     const user = await this.users.findByEmail(dto.email);
-    if (!user) {
-      return { message: 'If that email exists, a reset link was sent' };
+    if (!user || !user.isActive) {
+      return { message: 'If that email exists, a password reset OTP was sent' };
     }
 
+    try {
+      return await this.otp.requestOtp(user.email, 'reset');
+    } catch (err) {
+      if (err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
+        throw err;
+      }
+      throw err;
+    }
+  }
+
+  async verifyForgotPasswordOtp(
+    dto: VerifyForgotPasswordOtpDto,
+  ): Promise<ForgotPasswordResetTokenResponse> {
+    const user = await this.users.findByEmail(dto.email);
+    if (!user || !user.isActive) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    await this.otp.verifyOtp(dto.email, dto.otp, 'reset');
+
     const raw = this.tokens.generateRawToken();
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     await this.prisma.passwordResetToken.create({
       data: {
         userId: user.id,
@@ -198,11 +224,10 @@ export class AuthService {
       },
     });
 
-    const appUrl = this.config.get<string>('APP_URL', 'http://localhost:5173');
-    const resetUrl = `${appUrl}/reset-password?token=${raw}`;
-    await this.mail.sendPasswordReset(user.email, resetUrl);
-
-    return { message: 'If that email exists, a reset link was sent' };
+    return {
+      message: 'OTP verified. Set your new password.',
+      resetToken: raw,
+    };
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<MessageResponse> {

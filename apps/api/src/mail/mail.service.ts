@@ -51,6 +51,14 @@ export class MailService {
     );
   }
 
+  async sendPasswordResetOtp(to: string, otp: string): Promise<void> {
+    await this.sendMail(
+      to,
+      'Password reset OTP',
+      `<p>Your password reset code is <strong>${otp}</strong>.</p><p>It expires in a few minutes. If you did not request this, you can ignore this email.</p>`,
+    );
+  }
+
   async sendPasswordReset(to: string, resetUrl: string): Promise<void> {
     await this.sendMail(
       to,

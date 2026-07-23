@@ -51,6 +51,11 @@ export type MessageResponse = {
   message: string;
 };
 
+export type ForgotPasswordResetTokenResponse = {
+  message: string;
+  resetToken: string;
+};
+
 export type OrgRole = 'OWNER' | 'ADMIN' | 'MEMBER';
 export type MembershipStatus = 'ACTIVE' | 'INVITED' | 'SUSPENDED' | 'DEACTIVATED';
 export type UserAccountStatus = 'ACTIVE' | 'INVITED' | 'SUSPENDED' | 'DEACTIVATED';
