@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { orgApi } from '../../../lib/api';
 import { useOrg } from '../../org/org-context';
 import { useIam } from '../../iam/iam-context';
+import { PageHeader } from '../../../components/PageHeader';
 
 type GridColumn = {
   id: string;
@@ -252,14 +253,17 @@ export function GridsPage() {
     : 1;
 
   return (
-    <section className="panel">
-      <h1>Dynamic Grid Builder</h1>
-      <p className="lede">
-        Configure columns, sorting, filtering, pagination, import/export, and saved views.
-      </p>
+    <div>
+      <PageHeader
+        title="Dynamic Grid Builder"
+        description="Configure columns, sorting, filtering, pagination, import/export, and saved views."
+      />
 
       {error && <div className="alert error">{error}</div>}
       {message && <div className="alert success">{message}</div>}
+
+      <section className="section-card">
+        <div className="section-card-body">
 
       <form className="auth-form compact" onSubmit={(e) => void onCreateGrid(e)}>
         <h2>New grid</h2>
@@ -487,6 +491,8 @@ export function GridsPage() {
           </form>
         </>
       )}
-    </section>
+        </div>
+      </section>
+    </div>
   );
 }

@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { getAccessToken, getOrganizationId, orgApi } from '../../../lib/api';
 import { useOrg } from '../../org/org-context';
 import { useAuth } from '../../auth/auth-context';
+import { PageHeader } from '../../../components/PageHeader';
 
 type DirectoryContact = {
   kind: 'USER' | 'CUSTOMER' | 'DEALER' | 'EMPLOYEE';
@@ -403,12 +404,11 @@ export function ChatPage() {
   }
 
   return (
-    <section className="panel messenger">
-      <h1>Enterprise Messenger</h1>
-      <p className="lede">
-        Chat and call Users, Customers, Dealers, and Employees. Online, typing, receipts, files,
-        A/V, screen share, recording.
-      </p>
+    <div>
+      <PageHeader
+        title="Enterprise Messenger"
+        description="Chat and call Users, Customers, Dealers, and Employees with presence, typing, receipts, files, and A/V."
+      />
       {error && <div className="alert error">{error}</div>}
 
       {incoming && (
@@ -583,6 +583,6 @@ export function ChatPage() {
           )}
         </div>
       </div>
-    </section>
+    </div>
   );
 }

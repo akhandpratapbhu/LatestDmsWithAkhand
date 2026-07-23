@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { orgApi } from '../../../lib/api';
 import { useAuth } from '../../auth/auth-context';
 import { useOrg } from '../../org/org-context';
+import { PageHeader } from '../../../components/PageHeader';
 
 type MineResponse = {
   landingPath: string;
@@ -37,15 +38,27 @@ export function DashboardPage() {
   }, [currentOrg?.id]);
 
   return (
-    <section className="panel">
-      <h1>{data?.dashboard?.name || `Welcome, ${user?.firstName}`}</h1>
-      <p className="lede">
-        {currentOrg
-          ? data?.dashboard?.role
-            ? `Role dashboard: ${data.dashboard.role.name}`
-            : `Signed in to ${currentOrg.name}`
-          : 'Create an organization to unlock your role dashboard.'}
-      </p>
+    <div>
+      <PageHeader
+        title={data?.dashboard?.name || `Welcome, ${user?.firstName}`}
+        description={
+          currentOrg
+            ? data?.dashboard?.role
+              ? `Role dashboard · ${data.dashboard.role.name}`
+              : `Signed in to ${currentOrg.name}`
+            : 'Create an organization to unlock your role dashboard.'
+        }
+        actions={
+          <>
+            <Link className="btn secondary" to="/app/sessions">
+              Sessions
+            </Link>
+            <button className="btn ghost" type="button" onClick={() => void logout(true)}>
+              Log out all devices
+            </button>
+          </>
+        }
+      />
 
       {error && <div className="alert error">{error}</div>}
 
@@ -70,17 +83,11 @@ export function DashboardPage() {
           ))}
         </div>
       ) : (
-        <p className="muted">No widgets yet for this role.</p>
+        <div className="empty-state">
+          <strong>No widgets configured</strong>
+          Ask an admin to assign a dashboard for your role.
+        </div>
       )}
-
-      <div className="action-row">
-        <Link className="btn secondary" to="/app/sessions">
-          Manage sessions
-        </Link>
-        <button className="btn ghost" type="button" onClick={() => void logout(true)}>
-          Log out all devices
-        </button>
-      </div>
-    </section>
+    </div>
   );
 }

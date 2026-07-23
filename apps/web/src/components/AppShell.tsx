@@ -1,16 +1,33 @@
-import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { useAuth } from '../features/auth/auth-context';
 import { useOrg } from '../features/org/org-context';
 import { useIam } from '../features/iam/iam-context';
 import { api, getAccessToken } from '../lib/api';
+import { UserAvatar } from './UserAvatar';
+
+const HIDDEN_SIDEBAR_PATHS = new Set(['/app/notifications', '/app/profile']);
+
+function titleFromPath(pathname: string): string {
+  if (pathname === '/app' || pathname === '/app/') return 'Overview';
+  const last = pathname.split('/').filter(Boolean).pop() ?? 'Workspace';
+  return last
+    .split('-')
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ');
+}
 
 export function AppShell() {
   const { user, logout } = useAuth();
   const { organizations, currentOrg, selectOrg } = useOrg();
   const { sidebar, loading } = useIam();
   const [unread, setUnread] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const pageTitle = useMemo(() => titleFromPath(location.pathname), [location.pathname]);
 
   useEffect(() => {
     void api<{ count: number }>('/notifications/unread-count')
@@ -30,61 +47,172 @@ export function AppShell() {
     };
   }, [user?.id, currentOrg?.id]);
 
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  async function onLogout() {
+    setMenuOpen(false);
+    await logout();
+    navigate('/login');
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <Link to="/app" className="brand-mark compact">
-          DMS
-        </Link>
-        {organizations.length > 0 && (
-          <select
-            className="org-select"
-            value={currentOrg?.id ?? ''}
-            onChange={(e) => selectOrg(e.target.value)}
-          >
-            {organizations.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
-        )}
+        <div className="sidebar-brand">
+          <Link to="/app" className="brand-mark compact">
+            <span className="brand-badge">D</span>
+            DMS
+          </Link>
+          <span className="sidebar-env">Local</span>
+        </div>
+
         <nav>
           {loading && <p className="muted tiny">Loading menus…</p>}
           {!loading &&
-            sidebar?.groups.map((group) => (
-              <div key={group.id} className="nav-group">
-                <p className="nav-group-label">{group.name}</p>
-                {group.menus.map((menu) =>
-                  menu.path ? (
-                    <NavLink key={menu.id} to={menu.path} end={menu.path === '/app'}>
-                      {menu.label}
-                      {menu.path === '/app/notifications' && unread > 0 ? (
-                        <span className="nav-badge">{unread}</span>
-                      ) : null}
+            sidebar?.groups.map((group) => {
+              const menus = group.menus.filter(
+                (menu) => menu.path && !HIDDEN_SIDEBAR_PATHS.has(menu.path),
+              );
+              if (!menus.length) return null;
+              return (
+                <div key={group.id} className="nav-group">
+                  <p className="nav-group-label">{group.name}</p>
+                  {menus.map((menu) => (
+                    <NavLink key={menu.id} to={menu.path!} end={menu.path === '/app'}>
+                      <span>{menu.label}</span>
                     </NavLink>
-                  ) : null,
-                )}
-              </div>
-            ))}
+                  ))}
+                </div>
+              );
+            })}
           {!loading && !sidebar?.groups.length && (
-            <>
-              <NavLink to="/app" end>
-                Overview
-              </NavLink>
-              <NavLink to="/app/profile">Profile</NavLink>
-            </>
+            <NavLink to="/app" end>
+              Overview
+            </NavLink>
           )}
         </nav>
-        <div className="sidebar-foot">
-          <p className="user-chip">
-            {user?.firstName} {user?.lastName}
-          </p>
-          <button type="button" className="btn ghost" onClick={() => void logout()}>
-            Log out
-          </button>
-        </div>
       </aside>
+
+      <header className="app-header">
+        <div className="app-header-left">
+          <div className="app-header-crumb">
+            <span>{currentOrg?.name || 'Workspace'}</span>
+            <span aria-hidden>/</span>
+            <strong>{pageTitle}</strong>
+          </div>
+        </div>
+        <div className="app-header-right">
+          {organizations.length > 0 && (
+            <select
+              className="header-org"
+              value={currentOrg?.id ?? ''}
+              onChange={(e) => selectOrg(e.target.value)}
+              aria-label="Organization"
+            >
+              {organizations.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <Link
+            to="/app/notifications"
+            className="header-icon-btn"
+            aria-label={unread > 0 ? `${unread} unread notifications` : 'Notifications'}
+            title="Notifications"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M12 22a2.2 2.2 0 0 0 2.2-2.2h-4.4A2.2 2.2 0 0 0 12 22Zm7-5.5V11a7 7 0 1 0-14 0v5.5L3 18.5V20h18v-1.5L19 16.5Z"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {unread > 0 ? <span className="header-badge">{unread > 99 ? '99+' : unread}</span> : null}
+          </Link>
+
+          <div className="header-menu" ref={menuRef}>
+            <button
+              type="button"
+              className="header-user-btn"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              <UserAvatar
+                firstName={user?.firstName}
+                lastName={user?.lastName}
+                avatarUrl={user?.avatarUrl}
+                size="sm"
+              />
+              <div className="header-user-meta">
+                <span>
+                  {user?.firstName} {user?.lastName}
+                </span>
+                <small>{user?.email}</small>
+              </div>
+              <svg className="header-caret" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden>
+                <path d="M5 7.5 10 12.5 15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </button>
+
+            {menuOpen && (
+              <div className="header-dropdown" role="menu">
+                <div className="header-dropdown-head">
+                  <UserAvatar
+                    firstName={user?.firstName}
+                    lastName={user?.lastName}
+                    avatarUrl={user?.avatarUrl}
+                    size="md"
+                  />
+                  <div>
+                    <strong>
+                      {user?.firstName} {user?.lastName}
+                    </strong>
+                    <span>{user?.email}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    navigate('/app/profile');
+                  }}
+                >
+                  Profile
+                </button>
+                <button type="button" role="menuitem" className="danger" onClick={() => void onLogout()}>
+                  Log out
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
       <main className="app-main">
         <Outlet />
       </main>

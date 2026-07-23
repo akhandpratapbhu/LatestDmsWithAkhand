@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { orgApi } from '../../../lib/api';
 import { useOrg } from '../../org/org-context';
 import { useIam } from '../../iam/iam-context';
+import { PageHeader } from '../../../components/PageHeader';
 
 type FormListItem = {
   id: string;
@@ -213,13 +214,17 @@ export function FormsPage() {
   }
 
   return (
-    <section className="panel">
-      <h1>Dynamic Form Builder</h1>
-      <p className="lede">Create forms with tabs, sections, controls, validation, and layout.</p>
+    <div>
+      <PageHeader
+        title="Dynamic Form Builder"
+        description="Create forms with tabs, sections, controls, validation, and layout."
+      />
 
       {error && <div className="alert error">{error}</div>}
       {message && <div className="alert success">{message}</div>}
 
+      <section className="section-card">
+        <div className="section-card-body">
       <form className="auth-form compact" onSubmit={(e) => void onCreateForm(e)}>
         <h2>New form</h2>
         <div className="row-2">
@@ -480,6 +485,8 @@ export function FormsPage() {
           </form>
         </>
       )}
-    </section>
+        </div>
+      </section>
+    </div>
   );
 }
