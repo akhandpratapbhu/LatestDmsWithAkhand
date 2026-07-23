@@ -57,10 +57,15 @@ export function ChatPage() {
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [online, setOnline] = useState<string[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'USER' | 'CUSTOMER' | 'DEALER' | 'EMPLOYEE'>('ALL');
+  const [contactQuery, setContactQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
   const [activeCall, setActiveCall] = useState<IncomingCall | null>(null);
   const [groupName, setGroupName] = useState('');
+  const [groupQuery, setGroupQuery] = useState('');
+  const [groupKind, setGroupKind] = useState<'ALL' | 'USER' | 'CUSTOMER' | 'DEALER' | 'EMPLOYEE'>('ALL');
+  const [groupMembers, setGroupMembers] = useState<DirectoryContact[]>([]);
+  const [showGroupForm, setShowGroupForm] = useState(false);
   const chatSocket = useRef<Socket | null>(null);
   const callSocket = useRef<Socket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -73,10 +78,42 @@ export function ChatPage() {
 
   const selectedRoom = useMemo(() => rooms.find((r) => r.id === roomId) ?? null, [rooms, roomId]);
 
-  const filteredContacts = useMemo(
-    () => contacts.filter((c) => (filter === 'ALL' ? true : c.kind === filter)),
-    [contacts, filter],
-  );
+  const filteredContacts = useMemo(() => {
+    const q = contactQuery.trim().toLowerCase();
+    return contacts.filter((c) => {
+      if (filter !== 'ALL' && c.kind !== filter) return false;
+      if (!q) return true;
+      return (
+        c.name.toLowerCase().includes(q) ||
+        (c.email ?? '').toLowerCase().includes(q) ||
+        (c.phone ?? '').toLowerCase().includes(q) ||
+        (c.subtitle ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [contacts, filter, contactQuery]);
+
+  const groupCandidates = useMemo(() => {
+    const q = groupQuery.trim().toLowerCase();
+    const selectedKeys = new Set(groupMembers.map((m) => `${m.kind}:${m.id}`));
+    return contacts.filter((c) => {
+      if (c.kind === 'USER' && c.id === user?.id) return false;
+      if (selectedKeys.has(`${c.kind}:${c.id}`)) return false;
+      if (groupKind !== 'ALL' && c.kind !== groupKind) return false;
+      const chatUserId = c.kind === 'USER' ? c.id : c.linkedUserId;
+      if (!chatUserId) return false; // group chat requires a linked login user
+      if (!q) return true;
+      return (
+        c.name.toLowerCase().includes(q) ||
+        (c.email ?? '').toLowerCase().includes(q) ||
+        (c.phone ?? '').toLowerCase().includes(q) ||
+        (c.subtitle ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [contacts, groupKind, groupMembers, groupQuery, user?.id]);
+
+  function resolveChatUserId(contact: DirectoryContact): string | null {
+    return contact.kind === 'USER' ? contact.id : contact.linkedUserId ?? null;
+  }
 
   async function loadRooms() {
     const list = await orgApi<ChatRoom[]>('/chat/rooms');
@@ -261,17 +298,43 @@ export function ChatPage() {
 
   async function createGroup(e: FormEvent) {
     e.preventDefault();
-    const memberUserIds = contacts
-      .filter((c) => c.kind === 'USER' && c.id !== user?.id)
-      .slice(0, 3)
-      .map((c) => c.id);
+    setError(null);
+    const memberUserIds = Array.from(
+      new Set(
+        groupMembers
+          .map((c) => resolveChatUserId(c))
+          .filter((id): id is string => Boolean(id) && id !== user?.id),
+      ),
+    );
+    if (!memberUserIds.length) {
+      setError('Add at least one member with a linked login account');
+      return;
+    }
     const room = await orgApi<ChatRoom>('/chat/rooms/group', {
       method: 'POST',
-      body: JSON.stringify({ name: groupName, memberUserIds }),
+      body: JSON.stringify({ name: groupName.trim(), memberUserIds }),
     });
     setGroupName('');
+    setGroupMembers([]);
+    setGroupQuery('');
+    setShowGroupForm(false);
     await loadRooms();
     setRoomId(room.id);
+  }
+
+  function addGroupMember(contact: DirectoryContact) {
+    setGroupMembers((prev) =>
+      prev.some((m) => m.kind === contact.kind && m.id === contact.id)
+        ? prev
+        : [...prev, contact],
+    );
+    setGroupQuery('');
+  }
+
+  function removeGroupMember(contact: DirectoryContact) {
+    setGroupMembers((prev) =>
+      prev.filter((m) => !(m.kind === contact.kind && m.id === contact.id)),
+    );
   }
 
   function emitTyping(isTyping: boolean) {
@@ -427,58 +490,154 @@ export function ChatPage() {
 
       <div className="messenger-grid">
         <aside className="messenger-side">
-          <h2>Contacts</h2>
-          <div className="action-row wrap">
-            {(['ALL', 'USER', 'CUSTOMER', 'DEALER', 'EMPLOYEE'] as const).map((k) => (
-              <button
-                key={k}
-                type="button"
-                className={`btn ${filter === k ? 'primary' : 'ghost'}`}
-                onClick={() => setFilter(k)}
-              >
-                {k}
-              </button>
-            ))}
+          <div className="messenger-side-head">
+            <h2>Contacts</h2>
+            <button
+              type="button"
+              className="btn secondary sm"
+              onClick={() => setShowGroupForm((v) => !v)}
+            >
+              {showGroupForm ? 'Close' : 'New group'}
+            </button>
           </div>
+
+          <label className="inline-field">
+            Contact type
+            <select
+              value={filter}
+              onChange={(e) =>
+                setFilter(e.target.value as 'ALL' | 'USER' | 'CUSTOMER' | 'DEALER' | 'EMPLOYEE')
+              }
+            >
+              <option value="ALL">ALL</option>
+              <option value="USER">USER</option>
+              <option value="CUSTOMER">CUSTOMER</option>
+              <option value="DEALER">DEALER</option>
+              <option value="EMPLOYEE">EMPLOYEE</option>
+            </select>
+          </label>
+
+          <label className="inline-field">
+            Search contacts
+            <input
+              value={contactQuery}
+              onChange={(e) => setContactQuery(e.target.value)}
+              placeholder="Name, email, phone…"
+            />
+          </label>
+
           <ul className="contact-list">
-            {filteredContacts.map((c) => (
-              <li key={`${c.kind}-${c.id}`}>
-                <button type="button" className="contact-item" onClick={() => void openContact(c)}>
-                  <strong>
-                    [{c.kind}] {c.name}
-                  </strong>
-                  <span className="muted tiny">
-                    {c.subtitle || c.email || c.phone || '—'}
-                    {c.linkedUserId && online.includes(c.linkedUserId) ? ' · online' : ''}
-                    {c.kind === 'USER' && online.includes(c.id) ? ' · online' : ''}
-                  </span>
-                </button>
-                <div className="action-row">
-                  <button className="btn ghost" type="button" onClick={() => void startCall('AUDIO', c)}>
-                    Audio
+            {filteredContacts.map((c) => {
+              const presenceId = c.kind === 'USER' ? c.id : c.linkedUserId;
+              const isOnline = presenceId ? online.includes(presenceId) : false;
+              return (
+                <li key={`${c.kind}-${c.id}`}>
+                  <button type="button" className="contact-item" onClick={() => void openContact(c)}>
+                    <strong>
+                      <span className="pill">{c.kind}</span> {c.name}
+                    </strong>
+                    <span className="muted tiny">
+                      {c.subtitle || c.email || c.phone || '—'}
+                      {isOnline ? ' · online' : ''}
+                    </span>
                   </button>
-                  <button className="btn ghost" type="button" onClick={() => void startCall('VIDEO', c)}>
-                    Video
-                  </button>
-                </div>
+                </li>
+              );
+            })}
+            {!filteredContacts.length && (
+              <li className="muted tiny" style={{ padding: '0.5rem' }}>
+                No contacts in this filter.
               </li>
-            ))}
+            )}
           </ul>
 
-          <form className="auth-form compact" onSubmit={(e) => void createGroup(e)}>
-            <h2>New group</h2>
-            <input
-              required
-              placeholder="Group name"
-              value={groupName}
-              onChange={(e) => setGroupName(e.target.value)}
-            />
-            <button className="btn secondary" type="submit">
-              Create group
-            </button>
-          </form>
+          {showGroupForm && (
+            <form className="auth-form compact group-create" onSubmit={(e) => void createGroup(e)}>
+              <h2>Create group</h2>
+              <label>
+                Group name
+                <input
+                  required
+                  placeholder="e.g. Family"
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                />
+              </label>
 
-          <h2>Rooms</h2>
+              <label className="inline-field">
+                Member type
+                <select
+                  value={groupKind}
+                  onChange={(e) =>
+                    setGroupKind(
+                      e.target.value as 'ALL' | 'USER' | 'CUSTOMER' | 'DEALER' | 'EMPLOYEE',
+                    )
+                  }
+                >
+                  <option value="ALL">ALL</option>
+                  <option value="USER">USER</option>
+                  <option value="CUSTOMER">CUSTOMER</option>
+                  <option value="DEALER">DEALER</option>
+                  <option value="EMPLOYEE">EMPLOYEE</option>
+                </select>
+              </label>
+
+              <label>
+                Search & add members
+                <input
+                  value={groupQuery}
+                  onChange={(e) => setGroupQuery(e.target.value)}
+                  placeholder="Search user / customer / dealer / employee"
+                />
+              </label>
+
+              {groupQuery.trim() && (
+                <ul className="contact-list group-picker">
+                  {groupCandidates.slice(0, 8).map((c) => (
+                    <li key={`pick-${c.kind}-${c.id}`}>
+                      <button type="button" className="contact-item" onClick={() => addGroupMember(c)}>
+                        <strong>
+                          <span className="pill">{c.kind}</span> {c.name}
+                        </strong>
+                        <span className="muted tiny">{c.email || c.phone || 'Add'}</span>
+                      </button>
+                    </li>
+                  ))}
+                  {!groupCandidates.length && (
+                    <li className="muted tiny" style={{ padding: '0.45rem' }}>
+                      No linked accounts found. Members need a login user.
+                    </li>
+                  )}
+                </ul>
+              )}
+
+              {groupMembers.length > 0 && (
+                <div className="group-chips">
+                  {groupMembers.map((m) => (
+                    <button
+                      key={`sel-${m.kind}-${m.id}`}
+                      type="button"
+                      className="pill ok"
+                      onClick={() => removeGroupMember(m)}
+                      title="Remove"
+                    >
+                      [{m.kind}] {m.name} ×
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <p className="muted tiny">
+                Only contacts with a linked login can join group chat & calls.
+              </p>
+
+              <button className="btn primary" type="submit" disabled={!groupMembers.length}>
+                Create group ({groupMembers.length})
+              </button>
+            </form>
+          )}
+
+          <h2>Chats</h2>
           <ul className="contact-list">
             {rooms.map((r) => (
               <li key={r.id}>
@@ -487,7 +646,10 @@ export function ChatPage() {
                   className={`contact-item ${roomId === r.id ? 'active' : ''}`}
                   onClick={() => setRoomId(r.id)}
                 >
-                  <strong>{roomTitle(r)}</strong>
+                  <strong>
+                    {r.type === 'GROUP' ? <span className="pill">GROUP</span> : null}{' '}
+                    {roomTitle(r)}
+                  </strong>
                   <span className="muted tiny">{r.messages?.[0]?.body || r.type}</span>
                 </button>
               </li>
@@ -498,14 +660,23 @@ export function ChatPage() {
         <div className="messenger-main">
           {selectedRoom ? (
             <>
-              <div className="action-row">
-                <h2>{roomTitle(selectedRoom)}</h2>
-                <button className="btn secondary" type="button" onClick={() => void startCall('AUDIO')}>
-                  Audio call
-                </button>
-                <button className="btn secondary" type="button" onClick={() => void startCall('VIDEO')}>
-                  Video call
-                </button>
+              <div className="messenger-main-head">
+                <div>
+                  <h2>{roomTitle(selectedRoom)}</h2>
+                  {selectedRoom.type === 'GROUP' && (
+                    <p className="muted tiny">
+                      {selectedRoom.members.length} members · group chat & call
+                    </p>
+                  )}
+                </div>
+                <div className="action-row" style={{ marginTop: 0 }}>
+                  <button className="btn secondary sm" type="button" onClick={() => void startCall('AUDIO')}>
+                    Audio call
+                  </button>
+                  <button className="btn secondary sm" type="button" onClick={() => void startCall('VIDEO')}>
+                    Video call
+                  </button>
+                </div>
               </div>
 
               <div className="message-list">
@@ -556,7 +727,10 @@ export function ChatPage() {
               </form>
             </>
           ) : (
-            <p className="muted">Select or start a conversation with a User, Customer, Dealer, or Employee.</p>
+            <div className="empty-state">
+              <strong>Start a conversation</strong>
+              Pick a contact on the left, or create a group like “Family”.
+            </div>
           )}
 
           {activeCall && (
