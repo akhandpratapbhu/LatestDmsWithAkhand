@@ -190,6 +190,8 @@ model Menu {
   label          String
   path           String?
   icon           String?
+  /// When set, sidebar item opens the form records grid at /app/data/:formId
+  formId         String?
   sortOrder      Int      @default(0)
   isActive       Boolean  @default(true)
   permissionId   String?
@@ -204,6 +206,7 @@ model Menu {
 
   @@index([organizationId])
   @@index([groupId])
+  @@index([formId])
   @@map("menus")
 }
 

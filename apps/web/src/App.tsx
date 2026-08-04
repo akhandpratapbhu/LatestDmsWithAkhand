@@ -26,8 +26,11 @@ import { UsersPage } from './features/users/pages/UsersPage';
 import { ProfilePage } from './features/users/pages/ProfilePage';
 import { AcceptInvitePage } from './features/users/pages/AcceptInvitePage';
 import { IamPage } from './features/iam/pages/IamPage';
+import { MenuBuilderPage } from './features/iam/pages/MenuBuilderPage';
 import { DashboardsAdminPage } from './features/dashboards/pages/DashboardsAdminPage';
 import { FormsPage } from './features/forms/pages/FormsPage';
+import { FormRecordsPage } from './features/forms/pages/FormRecordsPage';
+import { FormRecordFormPage } from './features/forms/pages/FormRecordFormPage';
 import { GridsPage } from './features/grids/pages/GridsPage';
 import { NotificationsPage } from './features/notifications/pages/NotificationsPage';
 import { ActivityPage, AuditPage } from './features/audit/pages/ActivityAuditPages';
@@ -146,6 +149,34 @@ function LegacyWorkspaceRedirect({ appPath }: { appPath: string }) {
   return <Navigate to={resolveAppHref(appPath, slug)} replace />;
 }
 
+function LegacyFormDataRedirect() {
+  const { formId = '' } = useParams<{ formId: string }>();
+  return <LegacyWorkspaceRedirect appPath={`/app/data/${formId}`} />;
+}
+
+function LegacyFormRecordNewRedirect() {
+  const { formId = '' } = useParams<{ formId: string }>();
+  return <LegacyWorkspaceRedirect appPath={`/app/data/${formId}/new`} />;
+}
+
+function LegacyFormRecordEditRedirect() {
+  const { formId = '', submissionId = '' } = useParams<{
+    formId: string;
+    submissionId: string;
+  }>();
+  return (
+    <LegacyWorkspaceRedirect appPath={`/app/data/${formId}/${submissionId}/edit`} />
+  );
+}
+
+function LegacyFormRecordViewRedirect() {
+  const { formId = '', submissionId = '' } = useParams<{
+    formId: string;
+    submissionId: string;
+  }>();
+  return <LegacyWorkspaceRedirect appPath={`/app/data/${formId}/${submissionId}`} />;
+}
+
 export function App() {
   return (
     <Routes>
@@ -194,6 +225,17 @@ export function App() {
         <Route path="/app/iam" element={<LegacyWorkspaceRedirect appPath="/app/iam" />} />
         <Route path="/app/dashboards" element={<LegacyWorkspaceRedirect appPath="/app/dashboards" />} />
         <Route path="/app/forms" element={<LegacyWorkspaceRedirect appPath="/app/forms" />} />
+        <Route path="/app/menus" element={<LegacyWorkspaceRedirect appPath="/app/menus" />} />
+        <Route path="/app/data/:formId/new" element={<LegacyFormRecordNewRedirect />} />
+        <Route
+          path="/app/data/:formId/:submissionId/edit"
+          element={<LegacyFormRecordEditRedirect />}
+        />
+        <Route
+          path="/app/data/:formId/:submissionId"
+          element={<LegacyFormRecordViewRedirect />}
+        />
+        <Route path="/app/data/:formId" element={<LegacyFormDataRedirect />} />
         <Route path="/app/grids" element={<LegacyWorkspaceRedirect appPath="/app/grids" />} />
         <Route path="/app/notifications" element={<LegacyWorkspaceRedirect appPath="/app/notifications" />} />
         <Route path="/app/activity" element={<LegacyWorkspaceRedirect appPath="/app/activity" />} />
@@ -221,6 +263,17 @@ export function App() {
         <Route path="iam" element={<IamPage />} />
         <Route path="dashboards" element={<DashboardsAdminPage />} />
         <Route path="forms" element={<FormsPage />} />
+        <Route path="menus" element={<MenuBuilderPage />} />
+        <Route path="data/:formId/new" element={<FormRecordFormPage mode="create" />} />
+        <Route
+          path="data/:formId/:submissionId/edit"
+          element={<FormRecordFormPage mode="edit" />}
+        />
+        <Route
+          path="data/:formId/:submissionId"
+          element={<FormRecordFormPage mode="view" />}
+        />
+        <Route path="data/:formId" element={<FormRecordsPage />} />
         <Route path="grids" element={<GridsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="activity" element={<ActivityPage />} />

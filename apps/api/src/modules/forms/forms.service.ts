@@ -294,6 +294,66 @@ export class FormsService {
     });
   }
 
+  async getSubmission(organizationId: string, formId: string, submissionId: string) {
+    const row = await this.prisma.formSubmission.findFirst({
+      where: { id: submissionId, formId, form: { organizationId } },
+    });
+    if (!row) throw new NotFoundException('Submission not found');
+    return row;
+  }
+
+  async updateSubmission(
+    organizationId: string,
+    formId: string,
+    submissionId: string,
+    payload: Record<string, unknown>,
+  ) {
+    const existing = await this.getSubmission(organizationId, formId, submissionId);
+    const form = await this.get(organizationId, formId);
+    if (form.status !== 'PUBLISHED' && form.status !== 'DRAFT') {
+      throw new BadRequestException('Form is not available');
+    }
+
+    const errors: string[] = [];
+    for (const section of form.sections) {
+      for (const control of section.controls) {
+        if (!control.isActive) continue;
+        const value = payload[control.fieldKey];
+        const validations = [...control.validations];
+        if (control.required) {
+          validations.unshift({
+            id: 'required',
+            controlId: control.id,
+            ruleType: 'REQUIRED',
+            value: null,
+            message: `${control.label} is required`,
+            sortOrder: -1,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        }
+        for (const rule of validations) {
+          const msg = this.validateValue(value, rule.ruleType, rule.value, rule.message);
+          if (msg) errors.push(msg);
+        }
+      }
+    }
+    if (errors.length) {
+      throw new BadRequestException(errors);
+    }
+
+    return this.prisma.formSubmission.update({
+      where: { id: existing.id },
+      data: { data: payload as Prisma.InputJsonValue },
+    });
+  }
+
+  async deleteSubmission(organizationId: string, formId: string, submissionId: string) {
+    const existing = await this.getSubmission(organizationId, formId, submissionId);
+    await this.prisma.formSubmission.delete({ where: { id: existing.id } });
+    return { ok: true };
+  }
+
   private validateValue(
     value: unknown,
     ruleType: ValidationRuleType | string,

@@ -118,9 +118,53 @@ export class CreateMenuDto {
   @IsString()
   permissionId?: string;
 
+  /** Link menu to a DynamicForm — path becomes /app/data/:formId when set. */
+  @IsOptional()
+  @IsString()
+  formId?: string;
+
   @IsOptional()
   @IsInt()
   sortOrder?: number;
+}
+
+export class UpdateMenuDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  label?: string;
+
+  @IsOptional()
+  @IsString()
+  path?: string | null;
+
+  @IsOptional()
+  @IsString()
+  icon?: string | null;
+
+  @IsOptional()
+  @IsString()
+  groupId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  parentId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  permissionId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  formId?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 export class AssignMemberRolesDto {

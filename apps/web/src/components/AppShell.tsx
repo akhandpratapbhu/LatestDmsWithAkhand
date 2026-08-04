@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
-  menuPathsForFeatures,
+  isMenuPathAllowedForFeatures,
   resolveAppHref,
   toCanonicalAppPath,
+  type SidebarMenuDto,
 } from '@dms/shared';
 import { useAuth } from '../features/auth/auth-context';
 import { useOrg } from '../features/org/org-context';
@@ -22,6 +23,8 @@ function titleFromPath(pathname: string, projectSlug?: string | null): string {
   if (canonical.startsWith('/app/projects')) return 'Project Dashboard';
   if (canonical.startsWith('/app/features')) return 'Features';
   if (canonical.startsWith('/app/settings/login')) return 'Login page';
+  if (canonical.startsWith('/app/menus')) return 'Menus';
+  if (canonical.startsWith('/app/data/')) return 'Form records';
   const last = canonical.split('/').filter(Boolean).pop() ?? 'Workspace';
   return last
     .split('-')
@@ -37,6 +40,79 @@ function loadOpenGroups(): Record<string, boolean> {
   } catch {
     return {};
   }
+}
+
+function menuMatchesPath(
+  menu: SidebarMenuDto,
+  pathname: string,
+  hrefFor: (appPath: string) => string,
+): boolean {
+  if (menu.path) {
+    const href = hrefFor(menu.path);
+    if (menu.path === '/app') {
+      if (pathname === href || pathname === `${href}/`) return true;
+    } else if (pathname === href || pathname.startsWith(`${href}/`)) {
+      return true;
+    }
+  }
+  return (menu.children ?? []).some((child) => menuMatchesPath(child, pathname, hrefFor));
+}
+
+function filterMenusForFeatures(
+  menus: SidebarMenuDto[],
+  enabledFeatures: string[],
+): SidebarMenuDto[] {
+  return menus
+    .map((menu) => {
+      const children = filterMenusForFeatures(menu.children ?? [], enabledFeatures);
+      const pathOk =
+        !!menu.path &&
+        !HIDDEN_SIDEBAR_PATHS.has(menu.path) &&
+        isMenuPathAllowedForFeatures(menu.path, enabledFeatures);
+      if (pathOk || children.length > 0) {
+        return { ...menu, children };
+      }
+      return null;
+    })
+    .filter(Boolean) as SidebarMenuDto[];
+}
+
+function SidebarMenuLinks({
+  menus,
+  hrefFor,
+}: {
+  menus: SidebarMenuDto[];
+  hrefFor: (appPath: string) => string;
+}) {
+  return (
+    <>
+      {menus.map((menu) => {
+        const hasChildren = (menu.children?.length ?? 0) > 0;
+        if (hasChildren) {
+          return (
+            <div key={menu.id} className="nav-submenu">
+              {menu.path ? (
+                <NavLink to={hrefFor(menu.path)} end={menu.path === '/app'} className="nav-parent-link">
+                  <span>{menu.label}</span>
+                </NavLink>
+              ) : (
+                <div className="nav-parent-label">{menu.label}</div>
+              )}
+              <div className="nav-submenu-items">
+                <SidebarMenuLinks menus={menu.children} hrefFor={hrefFor} />
+              </div>
+            </div>
+          );
+        }
+        if (!menu.path) return null;
+        return (
+          <NavLink key={menu.id} to={hrefFor(menu.path)} end={menu.path === '/app'}>
+            <span>{menu.label}</span>
+          </NavLink>
+        );
+      })}
+    </>
+  );
 }
 
 export function AppShell() {
@@ -62,35 +138,21 @@ export function AppShell() {
     [projectSlug],
   );
 
-  const featureAllowedPaths = useMemo(
-    () => menuPathsForFeatures(currentOrg?.enabledFeatures ?? []),
-    [currentOrg?.enabledFeatures],
-  );
+  const enabledFeatures = currentOrg?.enabledFeatures ?? [];
 
   const visibleGroups = useMemo(() => {
     if (!sidebar?.groups) return [];
     return sidebar.groups
       .map((group) => ({
         ...group,
-        menus: group.menus.filter((menu) => {
-          if (!menu.path || HIDDEN_SIDEBAR_PATHS.has(menu.path)) return false;
-          return featureAllowedPaths.has(menu.path);
-        }),
+        menus: filterMenusForFeatures(group.menus, enabledFeatures),
       }))
       .filter((group) => group.menus.length > 0);
-  }, [sidebar?.groups, featureAllowedPaths]);
+  }, [sidebar?.groups, enabledFeatures]);
 
   useEffect(() => {
-    // Keep the group containing the active route expanded
     const activeGroup = visibleGroups.find((group) =>
-      group.menus.some((menu) => {
-        if (!menu.path) return false;
-        const href = hrefFor(menu.path);
-        if (menu.path === '/app') {
-          return location.pathname === href || location.pathname === `${href}/`;
-        }
-        return location.pathname === href || location.pathname.startsWith(`${href}/`);
-      }),
+      group.menus.some((menu) => menuMatchesPath(menu, location.pathname, hrefFor)),
     );
     if (!activeGroup) return;
     setOpenGroups((prev) => {
@@ -216,14 +278,7 @@ export function AppShell() {
                   </button>
                   {open && (
                     <div className="nav-group-items">
-                      {group.menus.map((menu) => {
-                        const to = hrefFor(menu.path!);
-                        return (
-                          <NavLink key={menu.id} to={to} end={menu.path === '/app'}>
-                            <span>{menu.label}</span>
-                          </NavLink>
-                        );
-                      })}
+                      <SidebarMenuLinks menus={group.menus} hrefFor={hrefFor} />
                     </div>
                   )}
                 </div>

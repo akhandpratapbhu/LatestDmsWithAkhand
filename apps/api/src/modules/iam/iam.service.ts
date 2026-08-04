@@ -15,6 +15,8 @@ export type SidebarMenuDto = {
   label: string;
   path: string | null;
   icon: string | null;
+  formId: string | null;
+  permissionCode: string | null;
   sortOrder: number;
   children: SidebarMenuDto[];
 };
@@ -82,10 +84,105 @@ export class IamService {
     });
   }
 
+  /** Slug used as IAM resource key: menu.{resource} + {resource}.view|create|… */
+  private slugifyResource(label: string): string {
+    const slug = label
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 48);
+    return slug || 'custom';
+  }
+
   /**
-   * Ensure `{resource}.view|create|update|delete` permissions exist for every
-   * sidebar menu resource (derived from `menu.{resource}` codes). Grants new
-   * codes to the system ADMIN role when present.
+   * Bind a `menu.{resource}` permission to a menu that lacks one (Menu Builder
+   * custom items). Grants the new MENU permission to system ADMIN and to any
+   * role that already has this menu assigned (preserves existing access).
+   */
+  private async ensureMenuHasPermission(
+    db: TenantDb,
+    organizationId: string,
+    menu: { id: string; label: string; permissionId: string | null },
+  ): Promise<string> {
+    if (menu.permissionId) return menu.permissionId;
+
+    let resource = this.slugifyResource(menu.label);
+    let code = `menu.${resource}`;
+
+    let existing = await db.permission.findFirst({
+      where: { organizationId, code },
+    });
+    if (existing) {
+      const boundElsewhere = await db.menu.findFirst({
+        where: {
+          organizationId,
+          permissionId: existing.id,
+          NOT: { id: menu.id },
+        },
+        select: { id: true },
+      });
+      if (boundElsewhere) {
+        resource = `${resource}_${menu.id.replace(/-/g, '').slice(0, 8)}`;
+        code = `menu.${resource}`;
+        existing = await db.permission.findFirst({
+          where: { organizationId, code },
+        });
+      }
+    }
+
+    const createdIds: string[] = [];
+    if (!existing) {
+      existing = await db.permission.create({
+        data: {
+          organizationId,
+          code,
+          name: `${menu.label} menu`,
+          type: 'MENU' as PermissionType,
+          resource,
+          action: 'access',
+        },
+      });
+      createdIds.push(existing.id);
+    }
+
+    await db.menu.update({
+      where: { id: menu.id },
+      data: { permissionId: existing.id },
+    });
+
+    const grantRoleIds = new Set<string>();
+    const adminRole = await db.iamRole.findFirst({
+      where: { organizationId, code: 'ADMIN', isSystem: true },
+    });
+    if (adminRole) grantRoleIds.add(adminRole.id);
+
+    const roleMenus = await db.roleMenu.findMany({
+      where: { menuId: menu.id },
+      select: { roleId: true },
+    });
+    for (const rm of roleMenus as Array<{ roleId: string }>) {
+      grantRoleIds.add(rm.roleId);
+    }
+
+    if (grantRoleIds.size) {
+      await db.rolePermission.createMany({
+        data: [...grantRoleIds].map((roleId) => ({
+          roleId,
+          permissionId: existing.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    void createdIds;
+    return existing.id as string;
+  }
+
+  /**
+   * Backfill missing menu.* bindings, then ensure
+   * `{resource}.view|create|update|delete` for every menu resource.
+   * Grants new codes to the system ADMIN role when present.
    */
   async ensureCrudPermissions(organizationId: string): Promise<void> {
     const { db } = await this.resolveDb(organizationId);
@@ -93,8 +190,29 @@ export class IamService {
       where: { organizationId, isActive: true },
       include: { permission: true },
     });
+
+    for (const m of menus as Array<{
+      id: string;
+      label: string;
+      permissionId: string | null;
+      permission: { code: string } | null;
+    }>) {
+      if (!m.permission?.code?.startsWith('menu.')) {
+        await this.ensureMenuHasPermission(db, organizationId, {
+          id: m.id,
+          label: m.label,
+          // Force (re)bind when missing or not a menu.* code
+          permissionId: null,
+        });
+      }
+    }
+
+    const boundMenus = await db.menu.findMany({
+      where: { organizationId, isActive: true },
+      include: { permission: true },
+    });
     const resources = new Set<string>();
-    for (const m of menus as Array<{ permission: { code: string } | null }>) {
+    for (const m of boundMenus as Array<{ permission: { code: string } | null }>) {
       const code = m.permission?.code;
       if (code?.startsWith('menu.')) {
         resources.add(code.slice('menu.'.length));
@@ -301,22 +419,145 @@ export class IamService {
       groupId?: string;
       parentId?: string;
       permissionId?: string;
+      formId?: string;
       sortOrder?: number;
     },
   ) {
     const { db } = await this.resolveDb(organizationId);
-    return db.menu.create({
+    let groupId = data.groupId;
+    if (data.parentId) {
+      const parent = await db.menu.findFirst({
+        where: { id: data.parentId, organizationId },
+      });
+      if (!parent) throw new BadRequestException('Parent menu not found');
+      groupId = groupId ?? parent.groupId ?? undefined;
+    }
+    const formId = data.formId?.trim() || null;
+    const path =
+      formId != null
+        ? data.path?.trim() || `/app/data/${formId}`
+        : data.path?.trim() || null;
+    const created = await db.menu.create({
       data: {
         organizationId,
         label: data.label,
-        path: data.path,
+        path,
         icon: data.icon,
-        groupId: data.groupId,
+        groupId,
         parentId: data.parentId,
-        permissionId: data.permissionId,
+        permissionId: data.permissionId ?? null,
+        formId,
         sortOrder: data.sortOrder ?? 0,
       },
     });
+    if (!created.permissionId) {
+      await this.ensureMenuHasPermission(db, organizationId, {
+        id: created.id,
+        label: created.label,
+        permissionId: created.permissionId,
+      });
+    }
+    await this.ensureCrudPermissions(organizationId);
+    return db.menu.findFirst({
+      where: { id: created.id },
+      include: { permission: true },
+    });
+  }
+
+  async updateMenu(
+    organizationId: string,
+    menuId: string,
+    data: {
+      label?: string;
+      path?: string | null;
+      icon?: string | null;
+      groupId?: string | null;
+      parentId?: string | null;
+      permissionId?: string | null;
+      formId?: string | null;
+      sortOrder?: number;
+      isActive?: boolean;
+    },
+  ) {
+    const { db } = await this.resolveDb(organizationId);
+    const existing = await db.menu.findFirst({
+      where: { id: menuId, organizationId },
+    });
+    if (!existing) throw new NotFoundException('Menu not found');
+
+    if (data.parentId !== undefined && data.parentId !== null) {
+      if (data.parentId === menuId) {
+        throw new BadRequestException('Menu cannot be its own parent');
+      }
+      const parent = await db.menu.findFirst({
+        where: { id: data.parentId, organizationId },
+      });
+      if (!parent) throw new BadRequestException('Parent menu not found');
+    }
+
+    const nextFormId =
+      data.formId === undefined
+        ? existing.formId
+        : data.formId?.trim() || null;
+
+    let nextPath: string | null | undefined = data.path;
+    if (data.formId !== undefined) {
+      if (nextFormId) {
+        nextPath =
+          data.path !== undefined && data.path !== null && data.path.trim()
+            ? data.path.trim()
+            : `/app/data/${nextFormId}`;
+      } else if (data.path === undefined) {
+        // Cleared form link — keep existing path unless it was the auto data path
+        if (existing.formId && existing.path === `/app/data/${existing.formId}`) {
+          nextPath = null;
+        }
+      }
+    }
+
+    const updated = await db.menu.update({
+      where: { id: menuId },
+      data: {
+        ...(data.label !== undefined ? { label: data.label } : {}),
+        ...(nextPath !== undefined ? { path: nextPath } : {}),
+        ...(data.icon !== undefined ? { icon: data.icon } : {}),
+        ...(data.groupId !== undefined ? { groupId: data.groupId } : {}),
+        ...(data.parentId !== undefined ? { parentId: data.parentId } : {}),
+        ...(data.permissionId !== undefined ? { permissionId: data.permissionId } : {}),
+        ...(data.formId !== undefined ? { formId: nextFormId } : {}),
+        ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      },
+    });
+
+    if (!updated.permissionId) {
+      await this.ensureMenuHasPermission(db, organizationId, {
+        id: updated.id,
+        label: updated.label,
+        permissionId: updated.permissionId,
+      });
+      await this.ensureCrudPermissions(organizationId);
+    }
+
+    return db.menu.findFirst({
+      where: { id: menuId },
+      include: { permission: true },
+    });
+  }
+
+  async deleteMenu(organizationId: string, menuId: string) {
+    const { db } = await this.resolveDb(organizationId);
+    const existing = await db.menu.findFirst({
+      where: { id: menuId, organizationId },
+      include: { children: { where: { isActive: true }, select: { id: true } } },
+    });
+    if (!existing) throw new NotFoundException('Menu not found');
+    if (existing.children.length) {
+      throw new BadRequestException('Remove or reassign submenus before deleting this menu');
+    }
+    await db.roleMenu.deleteMany({ where: { menuId } });
+    await db.menu.delete({ where: { id: menuId } });
+    return { ok: true };
   }
 
   async assignMemberRoles(organizationId: string, userId: string, roleIds: string[]) {
@@ -383,6 +624,7 @@ export class IamService {
     dataSource: 'project' | 'platform';
   }> {
     await this.ensureSeeded(organizationId, userId);
+    await this.ensureCrudPermissions(organizationId);
     const { db, useProject } = await this.resolveDb(organizationId);
     const permissions = await this.getMemberPermissionCodes(organizationId, userId);
     const permissionSet = new Set(permissions);
@@ -437,6 +679,7 @@ export class IamService {
       label: string;
       path: string | null;
       icon: string | null;
+      formId: string | null;
       sortOrder: number;
       permission: { code: string } | null;
       children: Array<{
@@ -444,6 +687,7 @@ export class IamService {
         label: string;
         path: string | null;
         icon: string | null;
+        formId: string | null;
         sortOrder: number;
         permission: { code: string } | null;
       }>;
@@ -461,16 +705,22 @@ export class IamService {
             label: c.label,
             path: c.path,
             icon: c.icon,
+            formId: c.formId,
+            permissionCode: c.permission?.code ?? null,
             sortOrder: c.sortOrder,
             children: [] as SidebarMenuDto[],
           };
         })
         .filter(Boolean) as SidebarMenuDto[];
+      // Parent folder menus (no path) stay visible when they have allowed children
+      if (!m.path && children.length === 0) return null;
       return {
         id: m.id,
         label: m.label,
         path: m.path,
         icon: m.icon,
+        formId: m.formId,
+        permissionCode: m.permission?.code ?? null,
         sortOrder: m.sortOrder,
         children,
       };

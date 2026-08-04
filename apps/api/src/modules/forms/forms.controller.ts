@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -100,8 +101,35 @@ export class FormsController {
   }
 
   @Get(':id/submissions')
-  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
   submissions(@CurrentOrg() org: OrgContext, @Param('id') id: string) {
     return this.forms.listSubmissions(org.organizationId, id);
+  }
+
+  @Get(':id/submissions/:submissionId')
+  getSubmission(
+    @CurrentOrg() org: OrgContext,
+    @Param('id') id: string,
+    @Param('submissionId') submissionId: string,
+  ) {
+    return this.forms.getSubmission(org.organizationId, id, submissionId);
+  }
+
+  @Patch(':id/submissions/:submissionId')
+  updateSubmission(
+    @CurrentOrg() org: OrgContext,
+    @Param('id') id: string,
+    @Param('submissionId') submissionId: string,
+    @Body() dto: SubmitFormDto,
+  ) {
+    return this.forms.updateSubmission(org.organizationId, id, submissionId, dto.data);
+  }
+
+  @Delete(':id/submissions/:submissionId')
+  deleteSubmission(
+    @CurrentOrg() org: OrgContext,
+    @Param('id') id: string,
+    @Param('submissionId') submissionId: string,
+  ) {
+    return this.forms.deleteSubmission(org.organizationId, id, submissionId);
   }
 }

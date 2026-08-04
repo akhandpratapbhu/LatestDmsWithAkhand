@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -20,6 +21,7 @@ import {
   CreateMenuGroupDto,
   CreatePermissionDto,
   UpdateIamRoleDto,
+  UpdateMenuDto,
 } from './dto/iam.dto';
 import { UpdateLoginPageConfigDto } from './dto/login-page.dto';
 
@@ -100,6 +102,22 @@ export class IamController {
   @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
   createMenu(@CurrentOrg() org: OrgContext, @Body() dto: CreateMenuDto) {
     return this.iam.createMenu(org.organizationId, dto);
+  }
+
+  @Patch('menus/:id')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  updateMenu(
+    @CurrentOrg() org: OrgContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateMenuDto,
+  ) {
+    return this.iam.updateMenu(org.organizationId, id, dto);
+  }
+
+  @Delete('menus/:id')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  deleteMenu(@CurrentOrg() org: OrgContext, @Param('id') id: string) {
+    return this.iam.deleteMenu(org.organizationId, id);
   }
 
   @Post('members/:userId/roles')

@@ -264,6 +264,9 @@ export type SidebarMenuDto = {
   label: string;
   path: string | null;
   icon: string | null;
+  formId?: string | null;
+  /** Linked IAM menu permission code, e.g. `menu.hospitals`. */
+  permissionCode?: string | null;
   sortOrder: number;
   children: SidebarMenuDto[];
 };
@@ -323,6 +326,7 @@ export const DEFAULT_ENABLED_FEATURES: string[] = [
   'sessions',
   'calls',
   'login-page',
+  'menu-builder',
 ];
 
 /** Static marketplace catalog (Phase 1 — not yet DB-backed plugins). */
@@ -409,10 +413,9 @@ export const PLATFORM_FEATURE_CATALOG: PlatformFeatureCatalogItem[] = [
   {
     id: 'menu-builder',
     name: 'Menu Builder',
-    description: 'Customize project navigation menus.',
+    description: 'Customize project navigation menus and link them to dynamic forms.',
     category: 'Configuration',
-    menuPaths: [],
-    comingSoon: true,
+    menuPaths: ['/app/menus'],
   },
   {
     id: 'database',
@@ -460,6 +463,26 @@ export function menuPathsForFeatures(enabledFeatures: string[]): Set<string> {
     for (const path of feature.menuPaths) allowed.add(path);
   }
   return allowed;
+}
+
+/**
+ * Whether a sidebar menu path is allowed for the installed features.
+ * Exact catalog paths plus runtime prefixes (e.g. form-linked `/app/data/:formId`).
+ */
+export function isMenuPathAllowedForFeatures(
+  path: string | null | undefined,
+  enabledFeatures: string[],
+): boolean {
+  if (!path) return false;
+  const exact = menuPathsForFeatures(enabledFeatures);
+  if (exact.has(path)) return true;
+  if (path.startsWith('/app/data/') && enabledFeatures.includes('forms')) return true;
+  return false;
+}
+
+/** Canonical path for a form-linked sidebar menu. */
+export function formDataAppPath(formId: string): string {
+  return `/app/data/${formId}`;
 }
 
 /**

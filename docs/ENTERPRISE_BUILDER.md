@@ -71,6 +71,16 @@ Runtime switching: `ProjectDbService.getClient(orgId)` caches a `PrismaClient` p
 | Open project | Platform membership check; IAM/Users/Login page read/write **project DB** |
 | Feature marketplace | Install/uninstall updates platform `enabledFeatures`; sidebar filtered by catalog paths |
 | Forms / Grids / Chat | Still platform DB + `organizationId` (documented follow-up) |
+| **Menu Builder** | `/{slug}/menus` — create parent/submenu hierarchy; link a Dynamic Form via `Menu.formId` |
+| **Form-linked nav** | Sidebar item with `formId` opens `/{slug}/data/:formId` records grid; **Add** creates a submission |
+
+### Form → Menu → Grid flow
+
+1. Build & publish a form under **Forms** (`/{slug}/forms`).
+2. Open **Menus** (`/{slug}/menus`): create parent e.g. **Sale** (no form), then submenu **Stock** under it and **Link to form**.
+3. Sidebar shows **Sale → Stock**; click **Stock** → records grid; **Add** opens the dynamic form and creates a submission.
+
+Menus with `formId` use path `/app/data/:formId` (resolved to `/{slug}/data/:formId`). Parent menus may omit `path` and act as folders. `/app/data/*` is allowed when the **forms** feature is installed; Menu Builder is the **menu-builder** feature.
 
 ## How to test
 

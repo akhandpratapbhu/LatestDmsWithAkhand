@@ -17,6 +17,7 @@ const DEFAULT_PERMISSIONS: SeedPerm[] = [
   { code: 'menu.dashboards', name: 'Reports menu', type: 'MENU' },
   { code: 'menu.forms', name: 'Forms menu', type: 'MENU' },
   { code: 'menu.grids', name: 'Grids menu', type: 'MENU' },
+  { code: 'menu.menus', name: 'Menus menu', type: 'MENU' },
   { code: 'menu.notifications', name: 'Notifications menu', type: 'MENU' },
   { code: 'menu.search', name: 'Search menu', type: 'MENU' },
   { code: 'menu.activity', name: 'Activity menu', type: 'MENU' },
@@ -33,6 +34,7 @@ const DEFAULT_PERMISSIONS: SeedPerm[] = [
   { code: 'screen.dashboards', name: 'Reports builder', type: 'SCREEN', resource: 'dashboards', action: 'manage' },
   { code: 'screen.forms', name: 'Form builder', type: 'SCREEN', resource: 'forms', action: 'manage' },
   { code: 'screen.grids', name: 'Grid builder', type: 'SCREEN', resource: 'grids', action: 'manage' },
+  { code: 'screen.menus', name: 'Menu builder', type: 'SCREEN', resource: 'menus', action: 'manage' },
   { code: 'screen.notifications', name: 'Notifications screen', type: 'SCREEN', resource: 'notifications', action: 'manage' },
   { code: 'screen.search', name: 'Search screen', type: 'SCREEN', resource: 'search', action: 'use' },
   { code: 'screen.activity', name: 'Activity screen', type: 'SCREEN', resource: 'activity', action: 'view' },
@@ -154,10 +156,11 @@ export class ProjectIamSeedService {
         { label: 'Features', path: '/app/features', icon: 'form', groupId: configGroup.id, permissionCode: 'menu.forms', sortOrder: 0 },
         { label: 'Users', path: '/app/users', icon: 'users', groupId: accessGroup.id, permissionCode: 'menu.users', sortOrder: 2 },
         { label: 'Identity & Access', path: '/app/iam', icon: 'key', groupId: accessGroup.id, permissionCode: 'menu.iam', sortOrder: 3 },
-        { label: 'Login page', path: '/app/settings/login', icon: 'user', groupId: configGroup.id, permissionCode: 'menu.login', sortOrder: 5 },
+        { label: 'Login page', path: '/app/settings/login', icon: 'user', groupId: configGroup.id, permissionCode: 'menu.login', sortOrder: 6 },
         { label: 'Forms', path: '/app/forms', icon: 'form', groupId: configGroup.id, permissionCode: 'menu.forms', sortOrder: 2 },
-        { label: 'Grids', path: '/app/grids', icon: 'table', groupId: configGroup.id, permissionCode: 'menu.grids', sortOrder: 3 },
-        { label: 'Reports', path: '/app/dashboards', icon: 'layout', groupId: configGroup.id, permissionCode: 'menu.dashboards', sortOrder: 4 },
+        { label: 'Menus', path: '/app/menus', icon: 'menu', groupId: configGroup.id, permissionCode: 'menu.menus', sortOrder: 3 },
+        { label: 'Grids', path: '/app/grids', icon: 'table', groupId: configGroup.id, permissionCode: 'menu.grids', sortOrder: 4 },
+        { label: 'Reports', path: '/app/dashboards', icon: 'layout', groupId: configGroup.id, permissionCode: 'menu.dashboards', sortOrder: 5 },
         { label: 'Sessions', path: '/app/sessions', icon: 'shield', groupId: mainGroup.id, permissionCode: 'menu.sessions', sortOrder: 2 },
         { label: 'Chat', path: '/app/chat', icon: 'chat', groupId: mainGroup.id, permissionCode: 'menu.chat', sortOrder: 3 },
         { label: 'Calls history', path: '/app/calls', icon: 'phone', groupId: mainGroup.id, permissionCode: 'menu.calls', sortOrder: 4 },
@@ -345,10 +348,11 @@ export class ProjectIamSeedService {
       { path: '/app/features', label: 'Features', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 0 },
       { path: '/app/users', label: 'Users', icon: 'users', permissionCode: 'menu.users', groupId: accessGroup.id, sortOrder: 2 },
       { path: '/app/iam', label: 'Identity & Access', icon: 'key', permissionCode: 'menu.iam', groupId: accessGroup.id, sortOrder: 3 },
-      { path: '/app/settings/login', label: 'Login page', icon: 'user', permissionCode: 'menu.login', groupId: configGroup.id, sortOrder: 5 },
+      { path: '/app/settings/login', label: 'Login page', icon: 'user', permissionCode: 'menu.login', groupId: configGroup.id, sortOrder: 6 },
       { path: '/app/forms', label: 'Forms', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 2 },
-      { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: configGroup.id, sortOrder: 3 },
-      { path: '/app/dashboards', label: 'Reports', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, sortOrder: 4 },
+      { path: '/app/menus', label: 'Menus', icon: 'menu', permissionCode: 'menu.menus', groupId: configGroup.id, sortOrder: 3 },
+      { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: configGroup.id, sortOrder: 4 },
+      { path: '/app/dashboards', label: 'Reports', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, sortOrder: 5 },
       { path: '/app/sessions', label: 'Sessions', icon: 'shield', permissionCode: 'menu.sessions', groupId: mainGroup.id, sortOrder: 2 },
       { path: '/app/chat', label: 'Chat', icon: 'chat', permissionCode: 'menu.chat', groupId: mainGroup.id, sortOrder: 3 },
       { path: '/app/calls', label: 'Calls history', icon: 'phone', permissionCode: 'menu.calls', groupId: mainGroup.id, sortOrder: 4 },
@@ -379,6 +383,31 @@ export class ProjectIamSeedService {
           name: 'Login page settings',
           type: 'SCREEN',
           resource: 'login',
+          action: 'manage',
+        },
+      });
+    }
+
+    // Ensure menu-builder permissions for older project DBs
+    const menusPerm = await client.permission.findFirst({
+      where: { organizationId, code: 'menu.menus' },
+    });
+    if (!menusPerm) {
+      await client.permission.create({
+        data: {
+          organizationId,
+          code: 'menu.menus',
+          name: 'Menus menu',
+          type: 'MENU',
+        },
+      });
+      await client.permission.create({
+        data: {
+          organizationId,
+          code: 'screen.menus',
+          name: 'Menu builder',
+          type: 'SCREEN',
+          resource: 'menus',
           action: 'manage',
         },
       });
