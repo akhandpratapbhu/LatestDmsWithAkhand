@@ -152,6 +152,8 @@ export function AppShell() {
 
   useEffect(() => {
     const activeGroup = visibleGroups.find((group) =>
+      !group.isOuter &&
+      group.code !== '_OUTER' &&
       group.menus.some((menu) => menuMatchesPath(menu, location.pathname, hrefFor)),
     );
     if (!activeGroup) return;
@@ -250,6 +252,15 @@ export function AppShell() {
           {loading && <p className="muted tiny">Loading menus…</p>}
           {!loading &&
             visibleGroups.map((group) => {
+              if (group.isOuter || group.code === '_OUTER') {
+                return (
+                  <div key={group.id} className="nav-group outer">
+                    <div className="nav-group-items">
+                      <SidebarMenuLinks menus={group.menus} hrefFor={hrefFor} />
+                    </div>
+                  </div>
+                );
+              }
               const open = isGroupOpen(group.id);
               return (
                 <div key={group.id} className={`nav-group ${open ? 'open' : 'collapsed'}`}>

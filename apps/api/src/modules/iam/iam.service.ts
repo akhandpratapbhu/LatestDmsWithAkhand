@@ -26,6 +26,8 @@ export type SidebarGroupDto = {
   name: string;
   code: string;
   sortOrder: number;
+  /** When true, AppShell renders menus as outer top-level items (no group toggle). */
+  isOuter?: boolean;
   menus: SidebarMenuDto[];
 };
 
@@ -382,32 +384,112 @@ export class IamService {
   async listMenuGroups(organizationId: string) {
     await this.ensureCrudPermissions(organizationId);
     const { db } = await this.resolveDb(organizationId);
-    return db.menuGroup.findMany({
-      where: { organizationId, isActive: true },
+    const menuInclude = {
+      children: {
+        orderBy: { sortOrder: 'asc' as const },
+        include: { permission: true },
+      },
+      permission: true,
+    };
+    const groups = await db.menuGroup.findMany({
+      where: { organizationId },
       orderBy: { sortOrder: 'asc' },
       include: {
         menus: {
-          where: { parentId: null, isActive: true },
+          where: { parentId: null },
           orderBy: { sortOrder: 'asc' },
-          include: {
-            children: { where: { isActive: true }, orderBy: { sortOrder: 'asc' }, include: { permission: true } },
-            permission: true,
-          },
+          include: menuInclude,
         },
+      },
+    });
+    const ungroupedMenus = await db.menu.findMany({
+      where: { organizationId, groupId: null, parentId: null },
+      orderBy: { sortOrder: 'asc' },
+      include: menuInclude,
+    });
+    if (ungroupedMenus.length === 0) return groups;
+    return [
+      ...groups,
+      {
+        id: '__outer__',
+        name: 'Outer (no main menu)',
+        code: '_OUTER',
+        sortOrder: 9999,
+        isActive: true,
+        organizationId,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        menus: ungroupedMenus,
+        isOuter: true,
+      },
+    ];
+  }
+
+  private menuGroupCodeFromName(name: string): string {
+    const base = name
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40);
+    return base || 'MAIN';
+  }
+
+  async createMenuGroup(
+    organizationId: string,
+    data: { name: string; code?: string; sortOrder?: number; isActive?: boolean },
+  ) {
+    const { db } = await this.resolveDb(organizationId);
+    const requested = (data.code?.trim() || this.menuGroupCodeFromName(data.name)).toUpperCase();
+    let code = requested;
+    let suffix = 2;
+    while (await db.menuGroup.findFirst({ where: { organizationId, code } })) {
+      code = `${requested.slice(0, 36)}_${suffix}`;
+      suffix += 1;
+    }
+    return db.menuGroup.create({
+      data: {
+        organizationId,
+        name: data.name.trim(),
+        code,
+        sortOrder: data.sortOrder ?? 0,
+        isActive: data.isActive ?? true,
       },
     });
   }
 
-  async createMenuGroup(organizationId: string, data: { name: string; code: string; sortOrder?: number }) {
+  async updateMenuGroup(
+    organizationId: string,
+    groupId: string,
+    data: { name?: string; sortOrder?: number; isActive?: boolean },
+  ) {
     const { db } = await this.resolveDb(organizationId);
-    return db.menuGroup.create({
+    const existing = await db.menuGroup.findFirst({
+      where: { id: groupId, organizationId },
+    });
+    if (!existing) throw new NotFoundException('Main menu not found');
+    return db.menuGroup.update({
+      where: { id: groupId },
       data: {
-        organizationId,
-        name: data.name,
-        code: data.code.toUpperCase(),
-        sortOrder: data.sortOrder ?? 0,
+        ...(data.name !== undefined ? { name: data.name.trim() } : {}),
+        ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
       },
     });
+  }
+
+  async deleteMenuGroup(organizationId: string, groupId: string) {
+    const { db } = await this.resolveDb(organizationId);
+    const existing = await db.menuGroup.findFirst({
+      where: { id: groupId, organizationId },
+      include: { menus: { where: { isActive: true }, select: { id: true }, take: 1 } },
+    });
+    if (!existing) throw new NotFoundException('Main menu not found');
+    if (existing.menus.length) {
+      throw new BadRequestException('Remove or move submenus before deleting this main menu');
+    }
+    await db.menuGroup.delete({ where: { id: groupId } });
+    return { ok: true };
   }
 
   async createMenu(
@@ -421,16 +503,23 @@ export class IamService {
       permissionId?: string;
       formId?: string;
       sortOrder?: number;
+      isActive?: boolean;
     },
   ) {
     const { db } = await this.resolveDb(organizationId);
-    let groupId = data.groupId;
+    let groupId = data.groupId ?? null;
+    if (data.groupId) {
+      const group = await db.menuGroup.findFirst({
+        where: { id: data.groupId, organizationId },
+      });
+      if (!group) throw new BadRequestException('Parent main menu not found');
+    }
     if (data.parentId) {
       const parent = await db.menu.findFirst({
         where: { id: data.parentId, organizationId },
       });
       if (!parent) throw new BadRequestException('Parent menu not found');
-      groupId = groupId ?? parent.groupId ?? undefined;
+      groupId = groupId ?? parent.groupId ?? null;
     }
     const formId = data.formId?.trim() || null;
     const path =
@@ -448,6 +537,7 @@ export class IamService {
         permissionId: data.permissionId ?? null,
         formId,
         sortOrder: data.sortOrder ?? 0,
+        isActive: data.isActive ?? true,
       },
     });
     if (!created.permissionId) {
@@ -493,6 +583,13 @@ export class IamService {
         where: { id: data.parentId, organizationId },
       });
       if (!parent) throw new BadRequestException('Parent menu not found');
+    }
+
+    if (data.groupId !== undefined && data.groupId !== null) {
+      const group = await db.menuGroup.findFirst({
+        where: { id: data.groupId, organizationId },
+      });
+      if (!group) throw new BadRequestException('Parent main menu not found');
     }
 
     const nextFormId =
@@ -674,6 +771,19 @@ export class IamService {
       },
     });
 
+    const ungroupedMenus = await db.menu.findMany({
+      where: { organizationId, isActive: true, parentId: null, groupId: null },
+      orderBy: { sortOrder: 'asc' },
+      include: {
+        permission: true,
+        children: {
+          where: { isActive: true },
+          orderBy: { sortOrder: 'asc' },
+          include: { permission: true },
+        },
+      },
+    });
+
     type MenuRow = {
       id: string;
       label: string;
@@ -741,6 +851,20 @@ export class IamService {
         menus: g.menus.map(mapMenu).filter(Boolean) as SidebarMenuDto[],
       }))
       .filter((g) => g.menus.length > 0);
+
+    const outerMenus = (ungroupedMenus as MenuRow[])
+      .map(mapMenu)
+      .filter(Boolean) as SidebarMenuDto[];
+    if (outerMenus.length > 0) {
+      sidebarGroups.unshift({
+        id: '__outer__',
+        name: '',
+        code: '_OUTER',
+        sortOrder: -1,
+        isOuter: true,
+        menus: outerMenus,
+      });
+    }
 
     return {
       groups: sidebarGroups,

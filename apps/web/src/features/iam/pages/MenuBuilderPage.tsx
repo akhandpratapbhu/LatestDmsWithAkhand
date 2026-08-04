@@ -30,25 +30,45 @@ type MenuGroupRow = {
   name: string;
   code: string;
   sortOrder: number;
+  isActive: boolean;
+  isOuter?: boolean;
   menus: MenuRow[];
 };
 
-type Draft = {
+type CreateMode = 'main' | 'submenu';
+
+type MainDraft = {
+  name: string;
+  sortOrder: string;
+  isActive: boolean;
+};
+
+type SubmenuDraft = {
   label: string;
-  groupId: string;
-  parentId: string;
+  parentMainId: string;
   formId: string;
   icon: string;
   sortOrder: string;
+  isActive: boolean;
 };
 
-const emptyDraft = (): Draft => ({
+type EditTarget =
+  | { kind: 'main'; id: string }
+  | { kind: 'submenu'; id: string };
+
+const emptyMainDraft = (): MainDraft => ({
+  name: '',
+  sortOrder: '0',
+  isActive: true,
+});
+
+const emptySubmenuDraft = (): SubmenuDraft => ({
   label: '',
-  groupId: '',
-  parentId: '',
+  parentMainId: '',
   formId: '',
   icon: '',
   sortOrder: '0',
+  isActive: true,
 });
 
 export function MenuBuilderPage() {
@@ -58,58 +78,76 @@ export function MenuBuilderPage() {
   const [forms, setForms] = useState<FormOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft>(emptyDraft);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
+  const [mode, setMode] = useState<CreateMode>('main');
+  const [mainDraft, setMainDraft] = useState<MainDraft>(emptyMainDraft);
+  const [submenuDraft, setSubmenuDraft] = useState<SubmenuDraft>(emptySubmenuDraft);
+  const [editing, setEditing] = useState<EditTarget | null>(null);
+  const [editMain, setEditMain] = useState<MainDraft>(emptyMainDraft);
+  const [editSubmenu, setEditSubmenu] = useState<SubmenuDraft>(emptySubmenuDraft);
   const [busy, setBusy] = useState(false);
 
-  const flatParents = useMemo(() => {
-    const rows: Array<{ id: string; label: string; groupName: string }> = [];
-    for (const g of groups) {
-      for (const m of g.menus) {
-        rows.push({ id: m.id, label: m.label, groupName: g.name });
-      }
-    }
-    return rows;
-  }, [groups]);
+  const mainMenus = useMemo(
+    () => groups.filter((g) => !g.isOuter && g.id !== '__outer__'),
+    [groups],
+  );
 
   const load = useCallback(async () => {
     const [menuGroups, formList] = await Promise.all([
       orgApi<MenuGroupRow[]>('/iam/menu-groups'),
       orgApi<FormOption[]>('/forms').catch(() => [] as FormOption[]),
     ]);
-    setGroups(menuGroups);
+    setGroups(
+      menuGroups.map((g) => ({
+        ...g,
+        isOuter: g.isOuter || g.code === '_OUTER' || g.id === '__outer__',
+        isActive: g.isActive ?? true,
+      })),
+    );
     setForms(formList.filter((f) => f.status === 'PUBLISHED' || f.status === 'DRAFT'));
-    if (!draft.groupId && menuGroups[0]) {
-      setDraft((d) => ({ ...d, groupId: menuGroups[0].id }));
-    }
-  }, [draft.groupId]);
+  }, []);
 
   useEffect(() => {
     if (!currentOrg) return;
     void load().catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
-  }, [currentOrg?.id]);
+  }, [currentOrg?.id, load]);
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const formId = draft.formId || undefined;
-      await orgApi('/iam/menus', {
-        method: 'POST',
-        body: JSON.stringify({
-          label: draft.label.trim(),
-          groupId: draft.parentId ? undefined : draft.groupId || undefined,
-          parentId: draft.parentId || undefined,
-          formId,
-          path: formId ? formDataAppPath(formId) : undefined,
-          icon: draft.icon.trim() || undefined,
-          sortOrder: Number(draft.sortOrder) || 0,
-        }),
-      });
-      setMessage(draft.parentId ? 'Submenu created' : 'Menu created');
-      setDraft((d) => ({ ...emptyDraft(), groupId: d.groupId }));
+      if (mode === 'main') {
+        await orgApi('/iam/menu-groups', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: mainDraft.name.trim(),
+            sortOrder: Number(mainDraft.sortOrder) || 0,
+            isActive: mainDraft.isActive,
+          }),
+        });
+        setMessage('Main menu created');
+        setMainDraft(emptyMainDraft());
+      } else {
+        const formId = submenuDraft.formId || undefined;
+        await orgApi('/iam/menus', {
+          method: 'POST',
+          body: JSON.stringify({
+            label: submenuDraft.label.trim(),
+            groupId: submenuDraft.parentMainId || undefined,
+            formId,
+            path: formId ? formDataAppPath(formId) : undefined,
+            icon: submenuDraft.icon.trim() || undefined,
+            sortOrder: Number(submenuDraft.sortOrder) || 0,
+            isActive: submenuDraft.isActive,
+          }),
+        });
+        setMessage(
+          submenuDraft.parentMainId
+            ? 'Submenu created under main menu'
+            : 'Outer top-level item created',
+        );
+        setSubmenuDraft(emptySubmenuDraft());
+      }
       await load();
       await refreshSidebar();
     } catch (err) {
@@ -119,15 +157,26 @@ export function MenuBuilderPage() {
     }
   }
 
-  function startEdit(menu: MenuRow, groupId: string) {
-    setEditingId(menu.id);
-    setEditDraft({
+  function startEditMain(group: MenuGroupRow) {
+    setEditing({ kind: 'main', id: group.id });
+    setEditMain({
+      name: group.name,
+      sortOrder: String(group.sortOrder ?? 0),
+      isActive: group.isActive ?? true,
+    });
+    setMessage(null);
+    setError(null);
+  }
+
+  function startEditSubmenu(menu: MenuRow, groupId: string | null) {
+    setEditing({ kind: 'submenu', id: menu.id });
+    setEditSubmenu({
       label: menu.label,
-      groupId: menu.groupId ?? groupId,
-      parentId: menu.parentId ?? '',
+      parentMainId: menu.groupId ?? (groupId && groupId !== '__outer__' ? groupId : ''),
       formId: menu.formId ?? '',
       icon: menu.icon ?? '',
       sortOrder: String(menu.sortOrder ?? 0),
+      isActive: menu.isActive ?? true,
     });
     setMessage(null);
     setError(null);
@@ -135,25 +184,37 @@ export function MenuBuilderPage() {
 
   async function onSaveEdit(e: FormEvent) {
     e.preventDefault();
-    if (!editingId) return;
+    if (!editing) return;
     setBusy(true);
     setError(null);
     try {
-      const formId = editDraft.formId || null;
-      await orgApi(`/iam/menus/${editingId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          label: editDraft.label.trim(),
-          groupId: editDraft.parentId ? undefined : editDraft.groupId || null,
-          parentId: editDraft.parentId || null,
-          formId,
-          path: formId ? formDataAppPath(formId) : null,
-          icon: editDraft.icon.trim() || null,
-          sortOrder: Number(editDraft.sortOrder) || 0,
-        }),
-      });
-      setMessage('Menu updated');
-      setEditingId(null);
+      if (editing.kind === 'main') {
+        await orgApi(`/iam/menu-groups/${editing.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: editMain.name.trim(),
+            sortOrder: Number(editMain.sortOrder) || 0,
+            isActive: editMain.isActive,
+          }),
+        });
+        setMessage('Main menu updated');
+      } else {
+        const formId = editSubmenu.formId || null;
+        await orgApi(`/iam/menus/${editing.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            label: editSubmenu.label.trim(),
+            groupId: editSubmenu.parentMainId || null,
+            formId,
+            path: formId ? formDataAppPath(formId) : null,
+            icon: editSubmenu.icon.trim() || null,
+            sortOrder: Number(editSubmenu.sortOrder) || 0,
+            isActive: editSubmenu.isActive,
+          }),
+        });
+        setMessage('Submenu updated');
+      }
+      setEditing(null);
       await load();
       await refreshSidebar();
     } catch (err) {
@@ -163,14 +224,14 @@ export function MenuBuilderPage() {
     }
   }
 
-  async function onDelete(menuId: string) {
-    if (!window.confirm('Delete this menu item?')) return;
+  async function onDeleteMain(groupId: string) {
+    if (!window.confirm('Delete this main menu? Submenus must be removed first.')) return;
     setBusy(true);
     setError(null);
     try {
-      await orgApi(`/iam/menus/${menuId}`, { method: 'DELETE' });
-      setMessage('Menu deleted');
-      if (editingId === menuId) setEditingId(null);
+      await orgApi(`/iam/menu-groups/${groupId}`, { method: 'DELETE' });
+      setMessage('Main menu deleted');
+      if (editing?.kind === 'main' && editing.id === groupId) setEditing(null);
       await load();
       await refreshSidebar();
     } catch (err) {
@@ -180,7 +241,24 @@ export function MenuBuilderPage() {
     }
   }
 
-  async function move(menu: MenuRow, delta: number) {
+  async function onDeleteSubmenu(menuId: string) {
+    if (!window.confirm('Delete this menu item?')) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await orgApi(`/iam/menus/${menuId}`, { method: 'DELETE' });
+      setMessage('Menu deleted');
+      if (editing?.kind === 'submenu' && editing.id === menuId) setEditing(null);
+      await load();
+      await refreshSidebar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function moveSubmenu(menu: MenuRow, delta: number) {
     setBusy(true);
     try {
       await orgApi(`/iam/menus/${menu.id}`, {
@@ -194,6 +272,140 @@ export function MenuBuilderPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function moveMain(group: MenuGroupRow, delta: number) {
+    setBusy(true);
+    try {
+      await orgApi(`/iam/menu-groups/${group.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ sortOrder: (group.sortOrder ?? 0) + delta }),
+      });
+      await load();
+      await refreshSidebar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reorder failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function renderSubmenuEditForm() {
+    return (
+      <form className="auth-form compact" onSubmit={(e) => void onSaveEdit(e)}>
+        <div className="row-2">
+          <label>
+            Label
+            <input
+              required
+              value={editSubmenu.label}
+              onChange={(e) => setEditSubmenu((d) => ({ ...d, label: e.target.value }))}
+            />
+          </label>
+          <label>
+            Parent main menu
+            <select
+              value={editSubmenu.parentMainId}
+              onChange={(e) => setEditSubmenu((d) => ({ ...d, parentMainId: e.target.value }))}
+            >
+              <option value="">None — outer top-level</option>
+              {mainMenus.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="row-2">
+          <label>
+            Link to form
+            <select
+              value={editSubmenu.formId}
+              onChange={(e) => setEditSubmenu((d) => ({ ...d, formId: e.target.value }))}
+            >
+              <option value="">None</option>
+              {forms.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Icon
+            <input
+              value={editSubmenu.icon}
+              onChange={(e) => setEditSubmenu((d) => ({ ...d, icon: e.target.value }))}
+              placeholder="form"
+            />
+          </label>
+        </div>
+        <div className="row-2">
+          <label>
+            Sort order
+            <input
+              type="number"
+              value={editSubmenu.sortOrder}
+              onChange={(e) => setEditSubmenu((d) => ({ ...d, sortOrder: e.target.value }))}
+            />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={editSubmenu.isActive}
+              onChange={(e) => setEditSubmenu((d) => ({ ...d, isActive: e.target.checked }))}
+            />
+            Active
+          </label>
+        </div>
+        <div className="action-row">
+          <button className="btn primary" type="submit" disabled={busy}>
+            Save
+          </button>
+          <button className="btn secondary" type="button" onClick={() => setEditing(null)}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  function renderMenuRow(menu: MenuRow, groupId: string | null) {
+    if (editing?.kind === 'submenu' && editing.id === menu.id) {
+      return renderSubmenuEditForm();
+    }
+    return (
+      <div className="menu-builder-row">
+        <div>
+          <strong>{menu.label}</strong>
+          {!menu.isActive && <span className="muted tiny"> · inactive</span>}
+          <span className="muted tiny">
+            {' '}
+            · {menu.formId ? `form → /app/data/${menu.formId}` : menu.path || 'no path'}
+          </span>
+        </div>
+        <div className="action-row">
+          <button type="button" className="btn ghost" onClick={() => void moveSubmenu(menu, -1)} disabled={busy}>
+            ↑
+          </button>
+          <button type="button" className="btn ghost" onClick={() => void moveSubmenu(menu, 1)} disabled={busy}>
+            ↓
+          </button>
+          <button type="button" className="btn secondary" onClick={() => startEditSubmenu(menu, groupId)}>
+            Edit
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => void onDeleteSubmenu(menu.id)}
+            disabled={busy}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (!currentOrg) {
@@ -218,7 +430,7 @@ export function MenuBuilderPage() {
     <div>
       <PageHeader
         title="Menu Builder"
-        description="Create sidebar menus and submenus, then link them to a dynamic form. Linked items open a records grid with Add."
+        description="Create main menus (sidebar sections) and submenus that nest under them — or leave parent empty for an outer top-level item."
       />
 
       {error && <div className="alert error">{error}</div>}
@@ -226,92 +438,152 @@ export function MenuBuilderPage() {
 
       <section className="section-card">
         <div className="section-card-head">
-          <h2>Add menu item</h2>
+          <h2>Add menu</h2>
         </div>
         <div className="section-card-body">
-          <form className="auth-form compact" onSubmit={(e) => void onCreate(e)}>
-            <div className="row-2">
-              <label>
-                Label
-                <input
-                  required
-                  value={draft.label}
-                  onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
-                  placeholder="e.g. Sale or Stock"
-                />
-              </label>
-              <label>
-                Sort order
-                <input
-                  type="number"
-                  value={draft.sortOrder}
-                  onChange={(e) => setDraft((d) => ({ ...d, sortOrder: e.target.value }))}
-                />
-              </label>
-            </div>
-            <div className="row-2">
-              <label>
-                Group
-                <select
-                  required={!draft.parentId}
-                  disabled={Boolean(draft.parentId)}
-                  value={draft.groupId}
-                  onChange={(e) => setDraft((d) => ({ ...d, groupId: e.target.value }))}
-                >
-                  <option value="">Select group</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Parent menu (optional submenu)
-                <select
-                  value={draft.parentId}
-                  onChange={(e) => setDraft((d) => ({ ...d, parentId: e.target.value }))}
-                >
-                  <option value="">Top-level</option>
-                  {flatParents.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.groupName} / {p.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="row-2">
-              <label>
-                Link to form (optional)
-                <select
-                  value={draft.formId}
-                  onChange={(e) => setDraft((d) => ({ ...d, formId: e.target.value }))}
-                >
-                  <option value="">None (folder / custom path)</option>
-                  {forms.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name} ({f.status})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Icon (optional)
-                <input
-                  value={draft.icon}
-                  onChange={(e) => setDraft((d) => ({ ...d, icon: e.target.value }))}
-                  placeholder="form"
-                />
-              </label>
-            </div>
-            <p className="muted tiny">
-              Tip: create parent <strong>Sale</strong> with no form, then add child <strong>Stock</strong> under
-              it and link a published form.
-            </p>
-            <button className="btn primary" type="submit" disabled={busy}>
-              Create
+          <div className="segmented" role="tablist" aria-label="Create mode">
+            <button
+              type="button"
+              className={`btn ${mode === 'main' ? 'active' : ''}`}
+              role="tab"
+              aria-selected={mode === 'main'}
+              onClick={() => setMode('main')}
+            >
+              Main menu
             </button>
+            <button
+              type="button"
+              className={`btn ${mode === 'submenu' ? 'active' : ''}`}
+              role="tab"
+              aria-selected={mode === 'submenu'}
+              onClick={() => setMode('submenu')}
+            >
+              Submenu
+            </button>
+          </div>
+
+          <form className="auth-form compact" onSubmit={(e) => void onCreate(e)}>
+            {mode === 'main' ? (
+              <>
+                <div className="row-2">
+                  <label>
+                    Name
+                    <input
+                      required
+                      value={mainDraft.name}
+                      onChange={(e) => setMainDraft((d) => ({ ...d, name: e.target.value }))}
+                      placeholder="e.g. Workspace"
+                    />
+                  </label>
+                  <label>
+                    Sort order
+                    <input
+                      type="number"
+                      value={mainDraft.sortOrder}
+                      onChange={(e) => setMainDraft((d) => ({ ...d, sortOrder: e.target.value }))}
+                    />
+                  </label>
+                </div>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={mainDraft.isActive}
+                    onChange={(e) => setMainDraft((d) => ({ ...d, isActive: e.target.checked }))}
+                  />
+                  Active
+                </label>
+                <p className="muted tiny">
+                  A main menu is a top-level sidebar section (like <strong>Workspace</strong>). Add
+                  submenus under it next.
+                </p>
+                <button className="btn primary" type="submit" disabled={busy}>
+                  Create main menu
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="row-2">
+                  <label>
+                    Label
+                    <input
+                      required
+                      value={submenuDraft.label}
+                      onChange={(e) => setSubmenuDraft((d) => ({ ...d, label: e.target.value }))}
+                      placeholder="e.g. Dashboard"
+                    />
+                  </label>
+                  <label>
+                    Parent main menu
+                    <select
+                      value={submenuDraft.parentMainId}
+                      onChange={(e) =>
+                        setSubmenuDraft((d) => ({ ...d, parentMainId: e.target.value }))
+                      }
+                    >
+                      <option value="">None — outer top-level</option>
+                      {mainMenus.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="row-2">
+                  <label>
+                    Link to form (optional)
+                    <select
+                      value={submenuDraft.formId}
+                      onChange={(e) => setSubmenuDraft((d) => ({ ...d, formId: e.target.value }))}
+                    >
+                      <option value="">None</option>
+                      {forms.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name} ({f.status})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Icon (optional)
+                    <input
+                      value={submenuDraft.icon}
+                      onChange={(e) => setSubmenuDraft((d) => ({ ...d, icon: e.target.value }))}
+                      placeholder="form"
+                    />
+                  </label>
+                </div>
+                <div className="row-2">
+                  <label>
+                    Sort order
+                    <input
+                      type="number"
+                      value={submenuDraft.sortOrder}
+                      onChange={(e) =>
+                        setSubmenuDraft((d) => ({ ...d, sortOrder: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={submenuDraft.isActive}
+                      onChange={(e) =>
+                        setSubmenuDraft((d) => ({ ...d, isActive: e.target.checked }))
+                      }
+                    />
+                    Active
+                  </label>
+                </div>
+                <p className="muted tiny">
+                  Choose a parent to nest under that main menu. Leave parent empty to show as an
+                  outer top-level item (not inside any section).
+                </p>
+                <button className="btn primary" type="submit" disabled={busy}>
+                  Create submenu
+                </button>
+              </>
+            )}
           </form>
         </div>
       </section>
@@ -321,171 +593,99 @@ export function MenuBuilderPage() {
           <h2>Current menus</h2>
         </div>
         <div className="section-card-body">
+          {groups.length === 0 && <p className="muted tiny">No menus yet.</p>}
           {groups.map((group) => (
             <div key={group.id} className="menu-builder-group">
-              <h3>{group.name}</h3>
-              {group.menus.length === 0 && <p className="muted tiny">No top-level menus in this group.</p>}
+              {group.isOuter ? (
+                <h3>Outer top-level items</h3>
+              ) : editing?.kind === 'main' && editing.id === group.id ? (
+                <form className="auth-form compact" onSubmit={(e) => void onSaveEdit(e)}>
+                  <div className="row-2">
+                    <label>
+                      Name
+                      <input
+                        required
+                        value={editMain.name}
+                        onChange={(e) => setEditMain((d) => ({ ...d, name: e.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Sort order
+                      <input
+                        type="number"
+                        value={editMain.sortOrder}
+                        onChange={(e) => setEditMain((d) => ({ ...d, sortOrder: e.target.value }))}
+                      />
+                    </label>
+                  </div>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={editMain.isActive}
+                      onChange={(e) => setEditMain((d) => ({ ...d, isActive: e.target.checked }))}
+                    />
+                    Active
+                  </label>
+                  <div className="action-row">
+                    <button className="btn primary" type="submit" disabled={busy}>
+                      Save
+                    </button>
+                    <button className="btn secondary" type="button" onClick={() => setEditing(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="menu-builder-row">
+                  <h3>
+                    {group.name}
+                    <span className="muted tiny"> · main menu</span>
+                    {!group.isActive && <span className="muted tiny"> · inactive</span>}
+                  </h3>
+                  <div className="action-row">
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => void moveMain(group, -1)}
+                      disabled={busy}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => void moveMain(group, 1)}
+                      disabled={busy}
+                    >
+                      ↓
+                    </button>
+                    <button type="button" className="btn secondary" onClick={() => startEditMain(group)}>
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => void onDeleteMain(group.id)}
+                      disabled={busy}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {group.menus.length === 0 && !group.isOuter && (
+                <p className="muted tiny">No submenus in this main menu yet.</p>
+              )}
               <ul className="menu-builder-list">
                 {group.menus.map((menu) => (
                   <li key={menu.id}>
-                    {editingId === menu.id ? (
-                      <form className="auth-form compact" onSubmit={(e) => void onSaveEdit(e)}>
-                        <div className="row-2">
-                          <label>
-                            Label
-                            <input
-                              required
-                              value={editDraft.label}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, label: e.target.value }))}
-                            />
-                          </label>
-                          <label>
-                            Form
-                            <select
-                              value={editDraft.formId}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, formId: e.target.value }))}
-                            >
-                              <option value="">None</option>
-                              {forms.map((f) => (
-                                <option key={f.id} value={f.id}>
-                                  {f.name}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
-                        <div className="action-row">
-                          <button className="btn primary" type="submit" disabled={busy}>
-                            Save
-                          </button>
-                          <button
-                            className="btn secondary"
-                            type="button"
-                            onClick={() => setEditingId(null)}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </form>
-                    ) : (
-                      <div className="menu-builder-row">
-                        <div>
-                          <strong>{menu.label}</strong>
-                          <span className="muted tiny">
-                            {' '}
-                            · {menu.formId ? `form → /app/data/${menu.formId}` : menu.path || 'no path (folder)'}
-                          </span>
-                        </div>
-                        <div className="action-row">
-                          <button type="button" className="btn ghost" onClick={() => void move(menu, -1)} disabled={busy}>
-                            ↑
-                          </button>
-                          <button type="button" className="btn ghost" onClick={() => void move(menu, 1)} disabled={busy}>
-                            ↓
-                          </button>
-                          <button type="button" className="btn secondary" onClick={() => startEdit(menu, group.id)}>
-                            Edit
-                          </button>
-                          <button type="button" className="btn ghost" onClick={() => void onDelete(menu.id)} disabled={busy}>
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    {renderMenuRow(menu, group.isOuter ? null : group.id)}
                     {menu.children && menu.children.length > 0 && (
                       <ul className="menu-builder-children">
                         {menu.children.map((child) => (
                           <li key={child.id}>
-                            {editingId === child.id ? (
-                              <form className="auth-form compact" onSubmit={(e) => void onSaveEdit(e)}>
-                                <div className="row-2">
-                                  <label>
-                                    Label
-                                    <input
-                                      required
-                                      value={editDraft.label}
-                                      onChange={(e) =>
-                                        setEditDraft((d) => ({ ...d, label: e.target.value }))
-                                      }
-                                    />
-                                  </label>
-                                  <label>
-                                    Form
-                                    <select
-                                      value={editDraft.formId}
-                                      onChange={(e) =>
-                                        setEditDraft((d) => ({ ...d, formId: e.target.value }))
-                                      }
-                                    >
-                                      <option value="">None</option>
-                                      {forms.map((f) => (
-                                        <option key={f.id} value={f.id}>
-                                          {f.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </label>
-                                </div>
-                                <div className="action-row">
-                                  <button className="btn primary" type="submit" disabled={busy}>
-                                    Save
-                                  </button>
-                                  <button
-                                    className="btn secondary"
-                                    type="button"
-                                    onClick={() => setEditingId(null)}
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </form>
-                            ) : (
-                              <div className="menu-builder-row">
-                                <div>
-                                  <strong>{child.label}</strong>
-                                  <span className="muted tiny">
-                                    {' '}
-                                    ·{' '}
-                                    {child.formId
-                                      ? `form → /app/data/${child.formId}`
-                                      : child.path || 'no path'}
-                                  </span>
-                                </div>
-                                <div className="action-row">
-                                  <button
-                                    type="button"
-                                    className="btn ghost"
-                                    onClick={() => void move(child, -1)}
-                                    disabled={busy}
-                                  >
-                                    ↑
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn ghost"
-                                    onClick={() => void move(child, 1)}
-                                    disabled={busy}
-                                  >
-                                    ↓
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn secondary"
-                                    onClick={() => startEdit(child, group.id)}
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn ghost"
-                                    onClick={() => void onDelete(child.id)}
-                                    disabled={busy}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </div>
-                            )}
+                            {renderMenuRow(child, group.isOuter ? null : group.id)}
                           </li>
                         ))}
                       </ul>

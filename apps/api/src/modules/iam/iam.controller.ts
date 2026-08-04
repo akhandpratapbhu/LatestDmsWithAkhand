@@ -22,6 +22,7 @@ import {
   CreatePermissionDto,
   UpdateIamRoleDto,
   UpdateMenuDto,
+  UpdateMenuGroupDto,
 } from './dto/iam.dto';
 import { UpdateLoginPageConfigDto } from './dto/login-page.dto';
 
@@ -96,6 +97,22 @@ export class IamController {
   @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
   createMenuGroup(@CurrentOrg() org: OrgContext, @Body() dto: CreateMenuGroupDto) {
     return this.iam.createMenuGroup(org.organizationId, dto);
+  }
+
+  @Patch('menu-groups/:id')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  updateMenuGroup(
+    @CurrentOrg() org: OrgContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateMenuGroupDto,
+  ) {
+    return this.iam.updateMenuGroup(org.organizationId, id, dto);
+  }
+
+  @Delete('menu-groups/:id')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  deleteMenuGroup(@CurrentOrg() org: OrgContext, @Param('id') id: string) {
+    return this.iam.deleteMenuGroup(org.organizationId, id);
   }
 
   @Post('menus')

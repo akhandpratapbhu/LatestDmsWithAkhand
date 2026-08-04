@@ -81,16 +81,37 @@ export class CreatePermissionDto {
 
 export class CreateMenuGroupDto {
   @IsString()
-  @MinLength(2)
+  @MinLength(1)
   name!: string;
 
+  /** Optional; derived from name when omitted. */
+  @IsOptional()
   @IsString()
   @Matches(/^[A-Za-z0-9_-]+$/)
-  code!: string;
+  code?: string;
 
   @IsOptional()
   @IsInt()
   sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateMenuGroupDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  name?: string;
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 export class CreateMenuDto {
@@ -106,6 +127,7 @@ export class CreateMenuDto {
   @IsString()
   icon?: string;
 
+  /** Parent main menu (MenuGroup). Omit for an outer top-level item. */
   @IsOptional()
   @IsString()
   groupId?: string;
@@ -126,6 +148,10 @@ export class CreateMenuDto {
   @IsOptional()
   @IsInt()
   sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 export class UpdateMenuDto {

@@ -276,6 +276,8 @@ export type SidebarGroupDto = {
   name: string;
   code: string;
   sortOrder: number;
+  /** When true, menus render as outer top-level items (no group toggle). */
+  isOuter?: boolean;
   menus: SidebarMenuDto[];
 };
 
