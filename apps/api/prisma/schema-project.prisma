@@ -1,0 +1,303 @@
+// Project (tenant) database schema — one physical Postgres DB per project.
+// Platform metadata (organizations, platform auth, enabledFeatures) stays in schema.prisma.
+// Forms / Grids / Chat / Calls remain on the platform DB (organizationId) until a later phase.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../../node_modules/@dms/project-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum UserAccountStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum PermissionType {
+  SCREEN
+  API
+  DATA
+  MENU
+}
+
+enum WidgetType {
+  CHART
+  CARD
+  TABLE
+  TEXT
+}
+
+/// Project-local user. Prefer same UUID as platform User when linked.
+model User {
+  id              String            @id @default(uuid())
+  /// Platform user id when this row mirrors a platform account.
+  platformUserId  String?           @unique
+  email           String            @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  phone           String?
+  avatarUrl       String?
+  emailVerified   Boolean           @default(false)
+  emailVerifiedAt DateTime?
+  isActive        Boolean           @default(true)
+  /// Home/primary org id (denormalized; no Organization table in project DB).
+  organizationId  String?
+  status          UserAccountStatus @default(ACTIVE)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  memberships OrganizationMember[]
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+/// Membership / access assignment inside this project DB.
+/// organizationId is denormalized (no Organization table here — the DB *is* the project).
+model OrganizationMember {
+  id             String           @id @default(uuid())
+  organizationId String
+  userId         String
+  role           OrgRole          @default(MEMBER)
+  status         MembershipStatus @default(ACTIVE)
+  branchId       String?
+  departmentId   String?
+  designationId  String?
+  teamId         String?
+  costCenterId   String?
+  joinedAt       DateTime         @default(now())
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberRoles MemberRole[]
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("organization_members")
+}
+
+model Permission {
+  id             String         @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  description    String?
+  type           PermissionType
+  resource       String?
+  action         String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  rolePermissions RolePermission[]
+  menus           Menu[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, type])
+  @@map("permissions")
+}
+
+model IamRole {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  code           String
+  description    String?
+  isSystem       Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+  roleMenus       RoleMenu[]
+  memberRoles     MemberRole[]
+  dashboards      Dashboard[]
+  landingPages    LandingPage[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("iam_roles")
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String
+  permissionId String
+
+  role       IamRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model MemberRole {
+  id         String   @id @default(uuid())
+  memberId   String
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  member OrganizationMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  role   IamRole            @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, roleId])
+  @@map("member_roles")
+}
+
+model MenuGroup {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  code           String
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  menus Menu[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("menu_groups")
+}
+
+model Menu {
+  id             String   @id @default(uuid())
+  organizationId String
+  groupId        String?
+  parentId       String?
+  label          String
+  path           String?
+  icon           String?
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  permissionId   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  group      MenuGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  parent     Menu?       @relation("MenuTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children   Menu[]      @relation("MenuTree")
+  permission Permission? @relation(fields: [permissionId], references: [id], onDelete: SetNull)
+  roleMenus  RoleMenu[]
+
+  @@index([organizationId])
+  @@index([groupId])
+  @@map("menus")
+}
+
+model RoleMenu {
+  id     String @id @default(uuid())
+  roleId String
+  menuId String
+
+  role IamRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  menu Menu    @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, menuId])
+  @@map("role_menus")
+}
+
+model Dashboard {
+  id             String   @id @default(uuid())
+  organizationId String
+  roleId         String?
+  name           String
+  slug           String
+  description    String?
+  isDefault      Boolean  @default(false)
+  isLanding      Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  role         IamRole?      @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  widgets      Widget[]
+  landingPages LandingPage[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([roleId])
+  @@map("dashboards")
+}
+
+model Widget {
+  id          String     @id @default(uuid())
+  dashboardId String
+  type        WidgetType
+  title       String
+  config      Json       @default("{}")
+  sortOrder   Int        @default(0)
+  posX        Int        @default(0)
+  posY        Int        @default(0)
+  width       Int        @default(4)
+  height      Int        @default(2)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@index([dashboardId])
+  @@map("widgets")
+}
+
+model LandingPage {
+  id             String   @id @default(uuid())
+  organizationId String
+  roleId         String
+  dashboardId    String
+  path           String   @default("/app")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  role      IamRole   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, roleId])
+  @@index([organizationId])
+  @@map("landing_pages")
+}
+
+/// Branding / auth options for this project's login experience.
+model LoginPageConfig {
+  id                   String   @id @default(uuid())
+  organizationId       String   @unique
+  companyName          String   @default("")
+  welcomeText          String   @default("Sign in to continue")
+  description          String?
+  logoUrl              String?
+  backgroundUrl        String?
+  theme                String   @default("default")
+  primaryColor         String?
+  enablePasswordLogin  Boolean  @default(true)
+  enableOtpLogin       Boolean  @default(false)
+  enableTwoFactor      Boolean  @default(false)
+  showRememberMe       Boolean  @default(true)
+  footerText           String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("login_page_configs")
+}

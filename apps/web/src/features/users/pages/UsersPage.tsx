@@ -122,7 +122,7 @@ export function UsersPage() {
     <div>
       <PageHeader
         title="Users"
-        description={`Organization members for ${currentOrg.name} — full profile details from the database.`}
+        description={`Project members for ${currentOrg.name} — full profile details from the database.`}
       />
 
       {error && <div className="alert error">{error}</div>}
@@ -147,6 +147,7 @@ export function UsersPage() {
                 <th>User</th>
                 <th>Email</th>
                 <th>Phone</th>
+                <th>Home org</th>
                 <th>Org role</th>
                 <th>Membership</th>
                 <th>Account</th>
@@ -179,6 +180,9 @@ export function UsersPage() {
                   </td>
                   <td>{u.email}</td>
                   <td>{u.phone || '—'}</td>
+                  <td className="muted tiny mono">
+                    {u.organizationId ? `${u.organizationId.slice(0, 8)}…` : '—'}
+                  </td>
                   <td>
                     <span className="pill">{u.role}</span>
                   </td>

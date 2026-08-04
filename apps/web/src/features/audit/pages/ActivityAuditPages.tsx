@@ -71,7 +71,7 @@ export function ActivityPage() {
   return (
     <section className="panel">
       <h1>Activity</h1>
-      <p className="lede">Organization timeline, your activity, and login history.</p>
+      <p className="lede">Project timeline, your activity, and login history.</p>
       {error && <div className="alert error">{error}</div>}
 
       <div className="action-row">

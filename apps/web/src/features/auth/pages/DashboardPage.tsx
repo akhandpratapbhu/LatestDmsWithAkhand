@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { orgApi } from '../../../lib/api';
+import { useWorkspaceHref } from '../../../lib/workspace-path';
 import { useAuth } from '../../auth/auth-context';
 import { useOrg } from '../../org/org-context';
 import { PageHeader } from '../../../components/PageHeader';
@@ -24,6 +25,7 @@ type MineResponse = {
 export function DashboardPage() {
   const { user, logout } = useAuth();
   const { currentOrg } = useOrg();
+  const href = useWorkspaceHref();
   const [data, setData] = useState<MineResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,11 +48,11 @@ export function DashboardPage() {
             ? data?.dashboard?.role
               ? `Role dashboard · ${data.dashboard.role.name}`
               : `Signed in to ${currentOrg.name}`
-            : 'Create an organization to unlock your role dashboard.'
+            : 'Create a project to unlock your role dashboard.'
         }
         actions={
           <>
-            <Link className="btn secondary" to="/app/sessions">
+            <Link className="btn secondary" to={href('/app/sessions')}>
               Sessions
             </Link>
             <button className="btn ghost" type="button" onClick={() => void logout(true)}>

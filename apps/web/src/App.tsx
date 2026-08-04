@@ -1,7 +1,13 @@
 import type { ReactNode } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useLayoutEffect } from 'react';
+import { Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom';
+import {
+  RESERVED_PROJECT_SLUGS,
+  projectLoginPath,
+  resolveAppHref,
+} from '@dms/shared';
 import { useAuth } from './features/auth/auth-context';
-import { OrgProvider } from './features/org/org-context';
+import { OrgProvider, useOrg } from './features/org/org-context';
 import { IamProvider } from './features/iam/iam-context';
 import { LoginPage } from './features/auth/pages/LoginPage';
 import { RegisterPage } from './features/auth/pages/RegisterPage';
@@ -11,7 +17,11 @@ import { VerifyEmailPage } from './features/auth/pages/VerifyEmailPage';
 import { OtpLoginPage } from './features/auth/pages/OtpLoginPage';
 import { DashboardPage } from './features/auth/pages/DashboardPage';
 import { SessionsPage } from './features/auth/pages/SessionsPage';
-import { OrganizationPage } from './features/org/pages/OrganizationPage';
+import { ProjectsPage } from './features/org/pages/ProjectsPage';
+import { CreateProjectPage } from './features/org/pages/CreateProjectPage';
+import { ProjectSettingsPage } from './features/org/pages/ProjectSettingsPage';
+import { FeaturesPage } from './features/org/pages/FeaturesPage';
+import { LoginPageSettingsPage } from './features/org/pages/LoginPageSettingsPage';
 import { UsersPage } from './features/users/pages/UsersPage';
 import { ProfilePage } from './features/users/pages/ProfilePage';
 import { AcceptInvitePage } from './features/users/pages/AcceptInvitePage';
@@ -21,8 +31,8 @@ import { FormsPage } from './features/forms/pages/FormsPage';
 import { GridsPage } from './features/grids/pages/GridsPage';
 import { NotificationsPage } from './features/notifications/pages/NotificationsPage';
 import { ActivityPage, AuditPage } from './features/audit/pages/ActivityAuditPages';
-import { MastersPage } from './features/masters/pages/MastersPage';
 import { ChatPage } from './features/chat/pages/ChatPage';
+import { ProjectLoginPage } from './features/auth/pages/ProjectLoginPage';
 import { CallsPage } from './features/calls/pages/CallsPage';
 import { AuthLayout } from './components/AuthLayout';
 import { AppShell } from './components/AppShell';
@@ -42,21 +52,109 @@ function Protected({ children }: { children: ReactNode }) {
   );
 }
 
+/** Auth required; unauthenticated users go to the project login page. */
+function ProjectProtected({ children }: { children: ReactNode }) {
+  const { projectSlug = '' } = useParams<{ projectSlug: string }>();
+  const { user, bootstrapping } = useAuth();
+
+  if (RESERVED_PROJECT_SLUGS.has(projectSlug.trim().toLowerCase())) {
+    return <Navigate to="/login" replace />;
+  }
+  if (bootstrapping) {
+    return <div className="page-center muted">Loading…</div>;
+  }
+  if (!user) {
+    return <Navigate to={projectLoginPath(projectSlug)} replace />;
+  }
+  return (
+    <OrgProvider>
+      <IamProvider>
+        <ProjectWorkspaceGuard>{children}</ProjectWorkspaceGuard>
+      </IamProvider>
+    </OrgProvider>
+  );
+}
+
+/** Ensure the URL slug matches a project the user belongs to and select it. */
+function ProjectWorkspaceGuard({ children }: { children: ReactNode }) {
+  const { projectSlug = '' } = useParams<{ projectSlug: string }>();
+  const { organizations, currentOrg, selectOrg, loading } = useOrg();
+  const key = projectSlug.trim().toLowerCase();
+
+  const match = organizations.find((o) => {
+    const slug = o.slug?.trim().toLowerCase();
+    const subdomain = o.subdomain?.trim().toLowerCase();
+    const code = o.code?.trim().toLowerCase();
+    return slug === key || subdomain === key || code === key;
+  });
+
+  useLayoutEffect(() => {
+    if (match && currentOrg?.id !== match.id) {
+      selectOrg(match.id);
+    }
+  }, [match, currentOrg?.id, selectOrg]);
+
+  if (loading && organizations.length === 0) {
+    return <div className="page-center muted">Loading…</div>;
+  }
+
+  if (!match) {
+    return <Navigate to={projectLoginPath(projectSlug)} replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function Guest({ children }: { children: ReactNode }) {
   const { user, bootstrapping } = useAuth();
   if (bootstrapping) {
     return <div className="page-center muted">Loading…</div>;
   }
   if (user) {
-    return <Navigate to="/app" replace />;
+    return <Navigate to="/app/projects" replace />;
   }
   return <>{children}</>;
+}
+
+/** Public project login; rejects reserved top-level segments (e.g. `/app/login`). */
+function ProjectLoginRoute() {
+  const { projectSlug = '' } = useParams<{ projectSlug: string }>();
+  if (RESERVED_PROJECT_SLUGS.has(projectSlug.trim().toLowerCase())) {
+    return <Navigate to="/login" replace />;
+  }
+  return <ProjectLoginPage />;
+}
+
+/** Legacy `/p/:slug/login` → `/:slug/login`. */
+function LegacyProjectLoginRedirect() {
+  const { projectSlug = '' } = useParams<{ projectSlug: string }>();
+  const [searchParams] = useSearchParams();
+  const q = searchParams.toString();
+  return <Navigate to={`${projectLoginPath(projectSlug)}${q ? `?${q}` : ''}`} replace />;
+}
+
+/** Old `/app/...` workspace bookmarks → `/{currentOrg.slug}/...`. */
+function LegacyWorkspaceRedirect({ appPath }: { appPath: string }) {
+  const { currentOrg, loading } = useOrg();
+  if (loading && !currentOrg) {
+    return <div className="page-center muted">Loading…</div>;
+  }
+  const slug = currentOrg?.slug?.trim();
+  if (!slug) {
+    return <Navigate to="/app/projects" replace />;
+  }
+  return <Navigate to={resolveAppHref(appPath, slug)} replace />;
 }
 
 export function App() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
+
+      {/* Public project-branded login (works while signed in so settings Preview works) */}
+      <Route path="/:projectSlug/login" element={<ProjectLoginRoute />} />
+      {/* Backward-compatible redirect from older `/p/...` URLs */}
+      <Route path="/p/:projectSlug/login" element={<LegacyProjectLoginRedirect />} />
 
       <Route
         element={
@@ -74,6 +172,7 @@ export function App() {
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
       </Route>
 
+      {/* Platform shell: project list / create / settings */}
       <Route
         element={
           <Protected>
@@ -81,21 +180,55 @@ export function App() {
           </Protected>
         }
       >
-        <Route path="/app" element={<DashboardPage />} />
-        <Route path="/app/organization" element={<OrganizationPage />} />
-        <Route path="/app/users" element={<UsersPage />} />
-        <Route path="/app/iam" element={<IamPage />} />
-        <Route path="/app/dashboards" element={<DashboardsAdminPage />} />
-        <Route path="/app/forms" element={<FormsPage />} />
-        <Route path="/app/grids" element={<GridsPage />} />
-        <Route path="/app/notifications" element={<NotificationsPage />} />
-        <Route path="/app/activity" element={<ActivityPage />} />
-        <Route path="/app/audit" element={<AuditPage />} />
-        <Route path="/app/masters" element={<MastersPage />} />
-        <Route path="/app/chat" element={<ChatPage />} />
-        <Route path="/app/calls" element={<CallsPage />} />
-        <Route path="/app/profile" element={<ProfilePage />} />
-        <Route path="/app/sessions" element={<SessionsPage />} />
+        <Route path="/app" element={<Navigate to="/app/projects" replace />} />
+        <Route path="/app/projects" element={<ProjectsPage />} />
+        <Route path="/app/projects/new" element={<CreateProjectPage />} />
+        <Route path="/app/projects/:projectId/settings" element={<ProjectSettingsPage />} />
+        <Route path="/app/organization" element={<Navigate to="/app/projects" replace />} />
+        <Route path="/app/masters" element={<Navigate to="/app/projects" replace />} />
+
+        {/* Legacy `/app/*` workspace → current project slug */}
+        <Route path="/app/features" element={<LegacyWorkspaceRedirect appPath="/app/features" />} />
+        <Route path="/app/settings/login" element={<LegacyWorkspaceRedirect appPath="/app/settings/login" />} />
+        <Route path="/app/users" element={<LegacyWorkspaceRedirect appPath="/app/users" />} />
+        <Route path="/app/iam" element={<LegacyWorkspaceRedirect appPath="/app/iam" />} />
+        <Route path="/app/dashboards" element={<LegacyWorkspaceRedirect appPath="/app/dashboards" />} />
+        <Route path="/app/forms" element={<LegacyWorkspaceRedirect appPath="/app/forms" />} />
+        <Route path="/app/grids" element={<LegacyWorkspaceRedirect appPath="/app/grids" />} />
+        <Route path="/app/notifications" element={<LegacyWorkspaceRedirect appPath="/app/notifications" />} />
+        <Route path="/app/activity" element={<LegacyWorkspaceRedirect appPath="/app/activity" />} />
+        <Route path="/app/audit" element={<LegacyWorkspaceRedirect appPath="/app/audit" />} />
+        <Route path="/app/chat" element={<LegacyWorkspaceRedirect appPath="/app/chat" />} />
+        <Route path="/app/calls" element={<LegacyWorkspaceRedirect appPath="/app/calls" />} />
+        <Route path="/app/profile" element={<LegacyWorkspaceRedirect appPath="/app/profile" />} />
+        <Route path="/app/sessions" element={<LegacyWorkspaceRedirect appPath="/app/sessions" />} />
+      </Route>
+
+      {/* Project workspace: `/{slug}/dashboard`, `/{slug}/users`, … */}
+      <Route
+        path="/:projectSlug"
+        element={
+          <ProjectProtected>
+            <AppShell />
+          </ProjectProtected>
+        }
+      >
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="features" element={<FeaturesPage />} />
+        <Route path="settings/login" element={<LoginPageSettingsPage />} />
+        <Route path="users" element={<UsersPage />} />
+        <Route path="iam" element={<IamPage />} />
+        <Route path="dashboards" element={<DashboardsAdminPage />} />
+        <Route path="forms" element={<FormsPage />} />
+        <Route path="grids" element={<GridsPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="activity" element={<ActivityPage />} />
+        <Route path="audit" element={<AuditPage />} />
+        <Route path="chat" element={<ChatPage />} />
+        <Route path="calls" element={<CallsPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="sessions" element={<SessionsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />

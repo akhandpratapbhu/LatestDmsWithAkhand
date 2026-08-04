@@ -15,9 +15,11 @@ import {
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes } from 'crypto';
 import { AuthUser, OrgUserDto } from '@dms/shared';
+import { PrismaClient as ProjectPrismaClient } from '@dms/project-client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../../mail/mail.service';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { ProjectDbService } from '../project-db/project-db.service';
 
 @Injectable()
 export class UsersService {
@@ -26,6 +28,7 @@ export class UsersService {
     private readonly config: ConfigService,
     private readonly mail: MailService,
     private readonly orgs: OrganizationsService,
+    private readonly projectDb: ProjectDbService,
   ) {}
 
   toAuthUser(user: User): AuthUser {
@@ -37,6 +40,8 @@ export class UsersService {
       phone: user.phone,
       avatarUrl: user.avatarUrl,
       emailVerified: user.emailVerified,
+      isPlatformAdmin: user.isPlatformAdmin,
+      organizationId: user.organizationId,
       status: user.status,
       createdAt: user.createdAt.toISOString(),
     };
@@ -61,6 +66,8 @@ export class UsersService {
     lastName: string;
     status?: UserAccountStatus;
     phone?: string;
+    /** Home/primary org when created in org context. */
+    organizationId?: string | null;
   }): Promise<User> {
     const existing = await this.findByEmail(input.email);
     if (existing) {
@@ -79,7 +86,20 @@ export class UsersService {
         phone: input.phone,
         status: input.status ?? 'ACTIVE',
         isActive: (input.status ?? 'ACTIVE') === 'ACTIVE',
+        organizationId: input.organizationId ?? null,
       },
+    });
+  }
+
+  /** Set home org only when the user does not already have one. */
+  private async ensureHomeOrganization(userId: string, organizationId: string): Promise<User> {
+    const user = await this.findById(userId);
+    if (user.organizationId) {
+      return user;
+    }
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { organizationId },
     });
   }
 
@@ -103,13 +123,33 @@ export class UsersService {
     return bcrypt.compare(password, user.passwordHash);
   }
 
-  async listOrgUsers(organizationId: string): Promise<OrgUserDto[]> {
-    const members = await this.prisma.organizationMember.findMany({
-      where: { organizationId },
-      include: { user: true },
-      orderBy: { joinedAt: 'desc' },
-    });
-    return members.map((m) => ({
+  private mapMemberToDto(m: {
+    id: string;
+    userId: string;
+    role: OrgRole | string;
+    status: MembershipStatus | string;
+    branchId: string | null;
+    departmentId: string | null;
+    designationId: string | null;
+    teamId: string | null;
+    costCenterId: string | null;
+    joinedAt: Date;
+    user: {
+      email: string;
+      firstName: string;
+      lastName: string;
+      phone: string | null;
+      avatarUrl: string | null;
+      organizationId?: string | null;
+      status: UserAccountStatus | string;
+      emailVerified: boolean;
+      emailVerifiedAt: Date | null;
+      isActive: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+    };
+  }): OrgUserDto {
+    return {
       membershipId: m.id,
       userId: m.userId,
       email: m.user.email,
@@ -117,9 +157,10 @@ export class UsersService {
       lastName: m.user.lastName,
       phone: m.user.phone,
       avatarUrl: m.user.avatarUrl,
-      role: m.role,
-      status: m.status,
-      accountStatus: m.user.status,
+      organizationId: m.user.organizationId ?? null,
+      role: m.role as OrgRole,
+      status: m.status as MembershipStatus,
+      accountStatus: m.user.status as UserAccountStatus,
       emailVerified: m.user.emailVerified,
       emailVerifiedAt: m.user.emailVerifiedAt?.toISOString() ?? null,
       isActive: m.user.isActive,
@@ -131,7 +172,101 @@ export class UsersService {
       teamId: m.teamId,
       costCenterId: m.costCenterId,
       joinedAt: m.joinedAt.toISOString(),
-    }));
+    };
+  }
+
+  /** Mirror a platform user into the project DB (same UUID). */
+  private async syncUserToProjectDb(
+    client: ProjectPrismaClient,
+    organizationId: string,
+    user: User,
+    membership: {
+      role: OrgRole;
+      status: MembershipStatus;
+      branchId?: string | null;
+      departmentId?: string | null;
+      designationId?: string | null;
+      teamId?: string | null;
+      costCenterId?: string | null;
+    },
+  ): Promise<void> {
+    await client.user.upsert({
+      where: { id: user.id },
+      create: {
+        id: user.id,
+        platformUserId: user.id,
+        email: user.email,
+        passwordHash: user.passwordHash,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        avatarUrl: user.avatarUrl,
+        emailVerified: user.emailVerified,
+        emailVerifiedAt: user.emailVerifiedAt,
+        organizationId: user.organizationId ?? organizationId,
+        status: user.status as 'ACTIVE' | 'INVITED' | 'SUSPENDED' | 'DEACTIVATED',
+        isActive: user.isActive,
+      },
+      update: {
+        platformUserId: user.id,
+        email: user.email,
+        passwordHash: user.passwordHash,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        avatarUrl: user.avatarUrl,
+        emailVerified: user.emailVerified,
+        emailVerifiedAt: user.emailVerifiedAt,
+        organizationId: user.organizationId ?? organizationId,
+        status: user.status as 'ACTIVE' | 'INVITED' | 'SUSPENDED' | 'DEACTIVATED',
+        isActive: user.isActive,
+      },
+    });
+
+    await client.organizationMember.upsert({
+      where: {
+        organizationId_userId: { organizationId, userId: user.id },
+      },
+      create: {
+        organizationId,
+        userId: user.id,
+        role: membership.role,
+        status: membership.status,
+        branchId: membership.branchId ?? null,
+        departmentId: membership.departmentId ?? null,
+        designationId: membership.designationId ?? null,
+        teamId: membership.teamId ?? null,
+        costCenterId: membership.costCenterId ?? null,
+      },
+      update: {
+        role: membership.role,
+        status: membership.status,
+        branchId: membership.branchId ?? null,
+        departmentId: membership.departmentId ?? null,
+        designationId: membership.designationId ?? null,
+        teamId: membership.teamId ?? null,
+        costCenterId: membership.costCenterId ?? null,
+      },
+    });
+  }
+
+  async listOrgUsers(organizationId: string): Promise<OrgUserDto[]> {
+    const projectClient = await this.projectDb.getClient(organizationId);
+    if (projectClient) {
+      const members = await projectClient.organizationMember.findMany({
+        where: { organizationId },
+        include: { user: true },
+        orderBy: { joinedAt: 'desc' },
+      });
+      return members.map((m) => this.mapMemberToDto(m));
+    }
+
+    const members = await this.prisma.organizationMember.findMany({
+      where: { organizationId },
+      include: { user: true },
+      orderBy: { joinedAt: 'desc' },
+    });
+    return members.map((m) => this.mapMemberToDto(m));
   }
 
   async createOrgUser(
@@ -163,6 +298,7 @@ export class UsersService {
       if (existing) {
         throw new ConflictException('User already belongs to this organization');
       }
+      user = await this.ensureHomeOrganization(user.id, organizationId);
     } else {
       user = await this.createUser({
         email: input.email,
@@ -171,14 +307,16 @@ export class UsersService {
         lastName: input.lastName,
         phone: input.phone,
         status: 'ACTIVE',
+        organizationId,
       });
     }
 
+    const role = input.role ?? 'MEMBER';
     const member = await this.prisma.organizationMember.create({
       data: {
         organizationId,
         userId: user.id,
-        role: input.role ?? 'MEMBER',
+        role,
         status: 'ACTIVE',
         branchId: input.branchId,
         departmentId: input.departmentId,
@@ -189,7 +327,20 @@ export class UsersService {
       include: { user: true },
     });
 
-    return (await this.listOrgUsers(organizationId)).find((u) => u.membershipId === member.id)!;
+    const projectClient = await this.projectDb.getClient(organizationId);
+    if (projectClient) {
+      await this.syncUserToProjectDb(projectClient, organizationId, member.user, {
+        role,
+        status: 'ACTIVE',
+        branchId: input.branchId,
+        departmentId: input.departmentId,
+        designationId: input.designationId,
+        teamId: input.teamId,
+        costCenterId: input.costCenterId,
+      });
+    }
+
+    return (await this.listOrgUsers(organizationId)).find((u) => u.userId === user!.id)!;
   }
 
   async inviteUser(
@@ -223,6 +374,7 @@ export class UsersService {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     let userId = existingMemberUser?.id;
+    let user = existingMemberUser;
     if (!userId) {
       const tempPassword = randomBytes(16).toString('hex') + 'A1';
       const created = await this.createUser({
@@ -231,8 +383,12 @@ export class UsersService {
         firstName: input.firstName ?? 'Invited',
         lastName: input.lastName ?? 'User',
         status: 'INVITED',
+        organizationId,
       });
       userId = created.id;
+      user = created;
+    } else {
+      user = await this.ensureHomeOrganization(userId, organizationId);
     }
 
     await this.prisma.userInvite.create({
@@ -266,6 +422,17 @@ export class UsersService {
         role: input.role ?? 'MEMBER',
       },
     });
+
+    const projectClient = await this.projectDb.getClient(organizationId);
+    if (projectClient && user) {
+      await this.syncUserToProjectDb(projectClient, organizationId, user, {
+        role: input.role ?? 'MEMBER',
+        status: 'INVITED',
+        branchId: input.branchId,
+        departmentId: input.departmentId,
+        designationId: input.designationId,
+      });
+    }
 
     const appUrl = this.config.get<string>('APP_URL', 'http://localhost:5173');
     const inviteUrl = `${appUrl}/accept-invite?token=${raw}`;
@@ -303,7 +470,7 @@ export class UsersService {
     }
 
     await this.updatePassword(userId, input.password);
-    const user = await this.prisma.user.update({
+    await this.prisma.user.update({
       where: { id: userId },
       data: {
         status: 'ACTIVE',
@@ -314,6 +481,7 @@ export class UsersService {
         ...(input.lastName ? { lastName: input.lastName } : {}),
       },
     });
+    const user = await this.ensureHomeOrganization(userId, invite.organizationId);
 
     await this.prisma.organizationMember.update({
       where: {
@@ -327,6 +495,17 @@ export class UsersService {
       data: { acceptedAt: new Date() },
     });
 
+    const projectClient = await this.projectDb.getClient(invite.organizationId);
+    if (projectClient) {
+      await this.syncUserToProjectDb(projectClient, invite.organizationId, user, {
+        role: invite.role,
+        status: 'ACTIVE',
+        branchId: invite.branchId,
+        departmentId: invite.departmentId,
+        designationId: invite.designationId,
+      });
+    }
+
     return this.toAuthUser(user);
   }
 
@@ -335,10 +514,20 @@ export class UsersService {
       where: { id: userId },
       data: { status: 'ACTIVE', isActive: true },
     });
-    await this.prisma.organizationMember.update({
+    const member = await this.prisma.organizationMember.update({
       where: { organizationId_userId: { organizationId, userId } },
       data: { status: 'ACTIVE' },
     });
+
+    const projectClient = await this.projectDb.getClient(organizationId);
+    if (projectClient) {
+      const user = await this.findById(userId);
+      await this.syncUserToProjectDb(projectClient, organizationId, user, {
+        role: member.role,
+        status: 'ACTIVE',
+      });
+    }
+
     const list = await this.listOrgUsers(organizationId);
     const row = list.find((u) => u.userId === userId);
     if (!row) throw new NotFoundException('Member not found');
@@ -372,6 +561,23 @@ export class UsersService {
           isActive: status === 'ACTIVE',
         },
       });
+    }
+
+    const projectClient = await this.projectDb.getClient(organizationId);
+    if (projectClient) {
+      await projectClient.organizationMember.updateMany({
+        where: { organizationId, userId },
+        data: { status },
+      });
+      if (status !== 'INVITED') {
+        await projectClient.user.updateMany({
+          where: { id: userId },
+          data: {
+            status: accountStatus,
+            isActive: status === 'ACTIVE',
+          },
+        });
+      }
     }
 
     const list = await this.listOrgUsers(organizationId);
@@ -410,6 +616,25 @@ export class UsersService {
       where: { organizationId_userId: { organizationId, userId } },
       data: memberData,
     });
+
+    const projectClient = await this.projectDb.getClient(organizationId);
+    if (projectClient) {
+      if (firstName || lastName || phone !== undefined) {
+        await projectClient.user.updateMany({
+          where: { id: userId },
+          data: {
+            ...(firstName ? { firstName } : {}),
+            ...(lastName ? { lastName } : {}),
+            ...(phone !== undefined ? { phone } : {}),
+          },
+        });
+      }
+      await projectClient.organizationMember.updateMany({
+        where: { organizationId, userId },
+        data: memberData,
+      });
+    }
+
     const list = await this.listOrgUsers(organizationId);
     const row = list.find((u) => u.userId === userId);
     if (!row) throw new NotFoundException('Member not found');

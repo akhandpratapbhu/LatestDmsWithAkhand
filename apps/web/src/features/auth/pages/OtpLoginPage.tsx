@@ -39,7 +39,7 @@ export function OtpLoginPage() {
     setLoading(true);
     try {
       await loginWithOtp(email, otp, 'Web Browser (OTP)');
-      navigate('/app');
+      navigate('/app/projects');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'OTP verification failed');
     } finally {

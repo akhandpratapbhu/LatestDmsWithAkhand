@@ -1,11 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { PermissionType, Prisma } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaClient as ProjectPrismaClient, Prisma } from '@dms/project-client';
 
 type SeedPerm = {
   code: string;
   name: string;
-  type: PermissionType;
+  type: 'SCREEN' | 'API' | 'DATA' | 'MENU';
   resource?: string;
   action?: string;
 };
@@ -27,6 +26,7 @@ const DEFAULT_PERMISSIONS: SeedPerm[] = [
   { code: 'menu.calls', name: 'Calls menu', type: 'MENU' },
   { code: 'menu.profile', name: 'Profile menu', type: 'MENU' },
   { code: 'menu.sessions', name: 'Sessions menu', type: 'MENU' },
+  { code: 'menu.login', name: 'Login page menu', type: 'MENU' },
   { code: 'screen.organization', name: 'Projects screen', type: 'SCREEN', resource: 'organization', action: 'view' },
   { code: 'screen.users', name: 'Users screen', type: 'SCREEN', resource: 'users', action: 'view' },
   { code: 'screen.iam', name: 'IAM screen', type: 'SCREEN', resource: 'iam', action: 'manage' },
@@ -40,6 +40,7 @@ const DEFAULT_PERMISSIONS: SeedPerm[] = [
   { code: 'screen.masters', name: 'Database screen', type: 'SCREEN', resource: 'masters', action: 'manage' },
   { code: 'screen.chat', name: 'Chat screen', type: 'SCREEN', resource: 'chat', action: 'use' },
   { code: 'screen.calls', name: 'Calls screen', type: 'SCREEN', resource: 'calls', action: 'use' },
+  { code: 'screen.login', name: 'Login page settings', type: 'SCREEN', resource: 'login', action: 'manage' },
   { code: 'api.users.write', name: 'Manage users API', type: 'API', resource: 'users', action: 'write' },
   { code: 'api.iam.write', name: 'Manage IAM API', type: 'API', resource: 'iam', action: 'write' },
   { code: 'api.dashboards.write', name: 'Manage dashboards API', type: 'API', resource: 'dashboards', action: 'write' },
@@ -51,15 +52,21 @@ const DEFAULT_PERMISSIONS: SeedPerm[] = [
   { code: 'data.users.own', name: 'View own profile data', type: 'DATA', resource: 'users', action: 'read_own' },
 ];
 
+/** IAM + LoginPageConfig seed against a project Prisma client. */
 @Injectable()
-export class IamSeedService {
-  constructor(private readonly prisma: PrismaService) {}
+export class ProjectIamSeedService {
+  async seedOrganization(
+    client: ProjectPrismaClient,
+    organizationId: string,
+    ownerMemberId: string,
+  ): Promise<void> {
+    const existing = await client.iamRole.findFirst({ where: { organizationId } });
+    if (existing) {
+      await this.syncMenuLayout(client, organizationId);
+      return;
+    }
 
-  async seedOrganization(organizationId: string, ownerMemberId: string): Promise<void> {
-    const existing = await this.prisma.iamRole.findFirst({ where: { organizationId } });
-    if (existing) return;
-
-    await this.prisma.$transaction(async (tx) => {
+    await client.$transaction(async (tx) => {
       for (const p of DEFAULT_PERMISSIONS) {
         await tx.permission.create({
           data: {
@@ -142,24 +149,20 @@ export class IamSeedService {
         sortOrder: number;
         isActive?: boolean;
       }> = [
-        // Platform
         { label: 'Dashboard', path: '/app', icon: 'home', groupId: mainGroup.id, permissionCode: 'menu.overview', sortOrder: 1 },
         { label: 'Projects', path: '/app/projects', icon: 'building', groupId: accessGroup.id, permissionCode: 'menu.organization', sortOrder: 1 },
         { label: 'Features', path: '/app/features', icon: 'form', groupId: configGroup.id, permissionCode: 'menu.forms', sortOrder: 0 },
         { label: 'Users', path: '/app/users', icon: 'users', groupId: accessGroup.id, permissionCode: 'menu.users', sortOrder: 2 },
         { label: 'Identity & Access', path: '/app/iam', icon: 'key', groupId: accessGroup.id, permissionCode: 'menu.iam', sortOrder: 3 },
-        // Builders / Configuration
+        { label: 'Login page', path: '/app/settings/login', icon: 'user', groupId: configGroup.id, permissionCode: 'menu.login', sortOrder: 5 },
         { label: 'Forms', path: '/app/forms', icon: 'form', groupId: configGroup.id, permissionCode: 'menu.forms', sortOrder: 2 },
         { label: 'Grids', path: '/app/grids', icon: 'table', groupId: configGroup.id, permissionCode: 'menu.grids', sortOrder: 3 },
         { label: 'Reports', path: '/app/dashboards', icon: 'layout', groupId: configGroup.id, permissionCode: 'menu.dashboards', sortOrder: 4 },
-        // Workspace (nested until later product focus)
         { label: 'Sessions', path: '/app/sessions', icon: 'shield', groupId: mainGroup.id, permissionCode: 'menu.sessions', sortOrder: 2 },
         { label: 'Chat', path: '/app/chat', icon: 'chat', groupId: mainGroup.id, permissionCode: 'menu.chat', sortOrder: 3 },
         { label: 'Calls history', path: '/app/calls', icon: 'phone', groupId: mainGroup.id, permissionCode: 'menu.calls', sortOrder: 4 },
         { label: 'Activity', path: '/app/activity', icon: 'activity', groupId: mainGroup.id, permissionCode: 'menu.activity', sortOrder: 5 },
-        // Governance
         { label: 'Audit', path: '/app/audit', icon: 'audit', groupId: governanceGroup.id, permissionCode: 'menu.audit', sortOrder: 1 },
-        // Header-only (kept for permissions / deep links, hidden from sidebar)
         { label: 'Search', path: '/app/search', icon: 'search', groupId: mainGroup.id, permissionCode: 'menu.search', sortOrder: 90, isActive: false },
         { label: 'Notifications', path: '/app/notifications', icon: 'bell', groupId: mainGroup.id, permissionCode: 'menu.notifications', sortOrder: 91, isActive: false },
         { label: 'Profile', path: '/app/profile', icon: 'user', groupId: mainGroup.id, permissionCode: 'menu.profile', sortOrder: 92, isActive: false },
@@ -307,19 +310,18 @@ export class IamSeedService {
     });
   }
 
-  /** Idempotent sidebar IA sync for existing organizations. */
-  async syncMenuLayout(organizationId: string): Promise<void> {
+  async syncMenuLayout(client: ProjectPrismaClient, organizationId: string): Promise<void> {
     const ensureGroup = async (code: string, name: string, sortOrder: number) => {
-      const existing = await this.prisma.menuGroup.findFirst({
+      const existing = await client.menuGroup.findFirst({
         where: { organizationId, code },
       });
       if (existing) {
-        return this.prisma.menuGroup.update({
+        return client.menuGroup.update({
           where: { id: existing.id },
           data: { name, sortOrder, isActive: true },
         });
       }
-      return this.prisma.menuGroup.create({
+      return client.menuGroup.create({
         data: { organizationId, name, code, sortOrder, isActive: true },
       });
     };
@@ -328,11 +330,6 @@ export class IamSeedService {
     const accessGroup = await ensureGroup('ACCESS', 'Access Control', 2);
     const configGroup = await ensureGroup('CONFIG', 'Configuration', 3);
     const governanceGroup = await ensureGroup('GOVERNANCE', 'Governance / Compliance', 4);
-
-    await this.prisma.menuGroup.updateMany({
-      where: { organizationId, code: 'ADMIN' },
-      data: { isActive: false, name: 'Administration (legacy)', sortOrder: 99 },
-    });
 
     const menuLayout: Array<{
       path: string;
@@ -348,6 +345,7 @@ export class IamSeedService {
       { path: '/app/features', label: 'Features', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 0 },
       { path: '/app/users', label: 'Users', icon: 'users', permissionCode: 'menu.users', groupId: accessGroup.id, sortOrder: 2 },
       { path: '/app/iam', label: 'Identity & Access', icon: 'key', permissionCode: 'menu.iam', groupId: accessGroup.id, sortOrder: 3 },
+      { path: '/app/settings/login', label: 'Login page', icon: 'user', permissionCode: 'menu.login', groupId: configGroup.id, sortOrder: 5 },
       { path: '/app/forms', label: 'Forms', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 2 },
       { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: configGroup.id, sortOrder: 3 },
       { path: '/app/dashboards', label: 'Reports', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, sortOrder: 4 },
@@ -361,27 +359,46 @@ export class IamSeedService {
       { path: '/app/profile', label: 'Profile', icon: 'user', permissionCode: 'menu.profile', groupId: mainGroup.id, sortOrder: 92, isActive: false },
     ];
 
-    const perms = await this.prisma.permission.findMany({ where: { organizationId } });
+    // Ensure login permission exists for older project DBs
+    const loginPerm = await client.permission.findFirst({
+      where: { organizationId, code: 'menu.login' },
+    });
+    if (!loginPerm) {
+      await client.permission.create({
+        data: {
+          organizationId,
+          code: 'menu.login',
+          name: 'Login page menu',
+          type: 'MENU',
+        },
+      });
+      await client.permission.create({
+        data: {
+          organizationId,
+          code: 'screen.login',
+          name: 'Login page settings',
+          type: 'SCREEN',
+          resource: 'login',
+          action: 'manage',
+        },
+      });
+    }
+
+    const perms = await client.permission.findMany({ where: { organizationId } });
     const byCode = Object.fromEntries(perms.map((p) => [p.code, p.id]));
 
-    // Migrate legacy Organization route → Projects
-    await this.prisma.menu.updateMany({
-      where: { organizationId, path: '/app/organization' },
-      data: { path: '/app/projects', label: 'Projects' },
-    });
-
     // Hide removed Masters / Database sidebar entry
-    await this.prisma.menu.updateMany({
+    await client.menu.updateMany({
       where: { organizationId, path: '/app/masters' },
       data: { isActive: false },
     });
 
     for (const m of menuLayout) {
-      const existing = await this.prisma.menu.findFirst({
+      const existing = await client.menu.findFirst({
         where: { organizationId, path: m.path },
       });
       if (existing) {
-        await this.prisma.menu.update({
+        await client.menu.update({
           where: { id: existing.id },
           data: {
             label: m.label,
@@ -393,7 +410,7 @@ export class IamSeedService {
           },
         });
       } else if (byCode[m.permissionCode]) {
-        await this.prisma.menu.create({
+        await client.menu.create({
           data: {
             organizationId,
             groupId: m.groupId,
@@ -407,5 +424,27 @@ export class IamSeedService {
         });
       }
     }
+  }
+
+  async ensureLoginPageConfig(
+    client: ProjectPrismaClient,
+    organizationId: string,
+    defaults?: { companyName?: string; description?: string | null },
+  ): Promise<void> {
+    const existing = await client.loginPageConfig.findUnique({ where: { organizationId } });
+    if (existing) return;
+    await client.loginPageConfig.create({
+      data: {
+        organizationId,
+        companyName: defaults?.companyName ?? '',
+        welcomeText: 'Sign in to continue',
+        description: defaults?.description?.trim() || null,
+        theme: 'default',
+        enablePasswordLogin: true,
+        enableOtpLogin: false,
+        enableTwoFactor: false,
+        showRememberMe: true,
+      },
+    });
   }
 }

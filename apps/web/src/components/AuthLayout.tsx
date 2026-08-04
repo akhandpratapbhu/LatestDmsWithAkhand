@@ -6,29 +6,29 @@ export function AuthLayout() {
       <aside className="auth-visual" aria-hidden={false}>
         <div className="auth-visual-brand">
           <Link to="/login" className="brand-mark compact">
-            <span className="brand-badge">D</span>
-            DMS
+            <span className="brand-badge">E</span>
+            Enterprise Builder
           </Link>
         </div>
         <div>
-          <h2>Enterprise document operations, organized.</h2>
+          <h2>Build enterprise apps as projects.</h2>
           <p>
-            Secure access, role-based workspaces, and audit-ready workflows for teams that run on
-            documents.
+            Platform shell for projects, forms, grids, and IAM — metadata-driven today, multi-database
+            ready tomorrow.
           </p>
         </div>
         <div className="auth-visual-meta">
           <div>
-            <strong>SSO-ready</strong>
-            Auth, OTP & sessions
+            <strong>Projects</strong>
+            Tenants with settings
           </div>
           <div>
-            <strong>Audit trail</strong>
-            Every critical action
+            <strong>Builders</strong>
+            Forms, grids & dashboards
           </div>
           <div>
-            <strong>Masters</strong>
-            Customers to warehouses
+            <strong>IAM</strong>
+            Roles, menus & audit
           </div>
         </div>
       </aside>
@@ -36,7 +36,7 @@ export function AuthLayout() {
       <div className="auth-panel-wrap">
         <div className="auth-panel">
           <header className="auth-brand">
-            <p className="brand-tagline">Sign in to continue to DMS</p>
+            <p className="brand-tagline">Sign in to Enterprise Builder</p>
           </header>
           <Outlet />
         </div>

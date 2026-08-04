@@ -7,9 +7,25 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { OrganizationDto } from '@dms/shared';
+import type { OrganizationDto, ProjectStatus } from '@dms/shared';
 import { api, getOrganizationId, setOrganizationId } from '../../lib/api';
 import { useAuth } from '../auth/auth-context';
+
+export type CreateProjectInput = {
+  name: string;
+  code?: string;
+  description?: string;
+  logoUrl?: string;
+  theme?: string;
+  currency?: string;
+  language?: string;
+  timezone?: string;
+  subdomain?: string;
+  status?: ProjectStatus;
+  version?: string;
+  databaseName?: string;
+  enabledFeatures?: string[];
+};
 
 type OrgContextValue = {
   organizations: OrganizationDto[];
@@ -17,7 +33,11 @@ type OrgContextValue = {
   loading: boolean;
   refreshOrgs: () => Promise<void>;
   selectOrg: (id: string) => void;
-  createOrg: (name: string, code?: string) => Promise<void>;
+  createOrg: (
+    input: CreateProjectInput | string,
+    code?: string,
+  ) => Promise<OrganizationDto>;
+  patchCurrentOrg: (org: OrganizationDto) => void;
 };
 
 const OrgContext = createContext<OrgContextValue | null>(null);
@@ -26,7 +46,8 @@ export function OrgProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [organizations, setOrganizations] = useState<OrganizationDto[]>([]);
   const [currentOrg, setCurrentOrg] = useState<OrganizationDto | null>(null);
-  const [loading, setLoading] = useState(false);
+  /** Start true when signed in so project-slug guards wait for the first org fetch. */
+  const [loading, setLoading] = useState(() => Boolean(user));
 
   const refreshOrgs = useCallback(async () => {
     if (!user) {
@@ -60,21 +81,37 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     [organizations],
   );
 
+  const patchCurrentOrg = useCallback((org: OrganizationDto) => {
+    setOrganizations((prev) => prev.map((o) => (o.id === org.id ? { ...o, ...org } : o)));
+    setCurrentOrg((prev) => (prev?.id === org.id ? { ...prev, ...org } : prev));
+  }, []);
+
   const createOrg = useCallback(
-    async (name: string, code?: string) => {
+    async (input: CreateProjectInput | string, code?: string) => {
+      const body: CreateProjectInput =
+        typeof input === 'string' ? { name: input, code } : input;
       const created = await api<OrganizationDto>('/organizations', {
         method: 'POST',
-        body: JSON.stringify({ name, code }),
+        body: JSON.stringify(body),
       });
       setOrganizationId(created.id);
       await refreshOrgs();
+      return created;
     },
     [refreshOrgs],
   );
 
   const value = useMemo(
-    () => ({ organizations, currentOrg, loading, refreshOrgs, selectOrg, createOrg }),
-    [organizations, currentOrg, loading, refreshOrgs, selectOrg, createOrg],
+    () => ({
+      organizations,
+      currentOrg,
+      loading,
+      refreshOrgs,
+      selectOrg,
+      createOrg,
+      patchCurrentOrg,
+    }),
+    [organizations, currentOrg, loading, refreshOrgs, selectOrg, createOrg, patchCurrentOrg],
   );
 
   return <OrgContext.Provider value={value}>{children}</OrgContext.Provider>;

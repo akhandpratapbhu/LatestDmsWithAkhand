@@ -1,4 +1,11 @@
-import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import {
   Branch,
   CostCenter,
@@ -6,19 +13,27 @@ import {
   Designation,
   Organization,
   PasswordPolicy,
+  Prisma,
   Team,
 } from '@prisma/client';
 import {
   BranchDto,
   CostCenterDto,
+  DEFAULT_ENABLED_FEATURES,
   DepartmentDto,
   DesignationDto,
   OrganizationDto,
   PasswordPolicyDto,
+  PLATFORM_FEATURE_CATALOG,
+  PlatformFeatureCatalogItem,
+  RESERVED_PROJECT_SLUGS,
+  suggestDatabaseName,
+  suggestProjectSlug,
   TeamDto,
 } from '@dms/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IamSeedService } from '../iam/iam-seed.service';
+import { ProjectDbProvisioner } from './project-db.provisioner';
 
 @Injectable()
 export class OrganizationsService {
@@ -26,17 +41,43 @@ export class OrganizationsService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => IamSeedService))
     private readonly iamSeed: IamSeedService,
+    private readonly dbProvisioner: ProjectDbProvisioner,
   ) {}
 
-  toOrg(o: Organization): OrganizationDto {
+  private parseEnabledFeatures(value: Prisma.JsonValue | null | undefined): string[] {
+    if (value == null) return [...DEFAULT_ENABLED_FEATURES];
+    if (!Array.isArray(value)) return [...DEFAULT_ENABLED_FEATURES];
+    return value.filter((v): v is string => typeof v === 'string');
+  }
+
+  toOrg(
+    o: Organization,
+    membershipRole?: OrganizationDto['membershipRole'],
+    extras?: Pick<OrganizationDto, 'provisioningWarning' | 'databaseProvisioned'>,
+  ): OrganizationDto {
     return {
       id: o.id,
       name: o.name,
       slug: o.slug,
       code: o.code,
+      description: o.description,
+      logoUrl: o.logoUrl,
+      version: o.version,
+      databaseName: o.databaseName,
       isActive: o.isActive,
+      status: o.status as OrganizationDto['status'],
+      theme: o.theme,
+      currency: o.currency,
+      language: o.language,
+      timezone: o.timezone,
+      subdomain: o.subdomain,
+      connectionString: o.connectionString,
+      enabledFeatures: this.parseEnabledFeatures(o.enabledFeatures),
       ownerId: o.ownerId,
+      ...(membershipRole ? { membershipRole } : {}),
       createdAt: o.createdAt.toISOString(),
+      updatedAt: o.updatedAt.toISOString(),
+      ...extras,
     };
   }
 
@@ -118,23 +159,93 @@ export class OrganizationsService {
     };
   }
 
-  private slugify(name: string): string {
-    const base = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 48);
-    return `${base || 'org'}-${Date.now().toString(36)}`;
+  /**
+   * Allocate a stable, readable public-login slug from the project name.
+   * Collisions (and reserved top-level paths) get a numeric suffix: `hospital-management-2`.
+   */
+  private async allocateUniqueSlug(name: string): Promise<string> {
+    const base = suggestProjectSlug(name);
+    let n = RESERVED_PROJECT_SLUGS.has(base) ? 2 : 1;
+    let candidate = n === 1 ? base : `${base}-${n}`;
+
+    for (;;) {
+      const taken = await this.prisma.organization.findFirst({
+        where: {
+          OR: [{ slug: candidate }, { subdomain: candidate }],
+        },
+        select: { id: true },
+      });
+      if (!taken && !RESERVED_PROJECT_SLUGS.has(candidate)) {
+        return candidate;
+      }
+      n += 1;
+      candidate = `${base}-${n}`;
+    }
   }
 
-  async createOrganization(userId: string, name: string, code?: string): Promise<OrganizationDto> {
+  async createOrganization(
+    userId: string,
+    data: {
+      name: string;
+      code?: string;
+      description?: string;
+      logoUrl?: string;
+      theme?: string;
+      currency?: string;
+      language?: string;
+      timezone?: string;
+      subdomain?: string;
+      status?: string;
+      version?: string;
+      databaseName?: string;
+      enabledFeatures?: string[];
+    },
+  ): Promise<OrganizationDto> {
+    const actor = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!actor?.isPlatformAdmin) {
+      throw new ForbiddenException('Only platform admins can create projects');
+    }
+
+    const databaseName = (data.databaseName?.trim() || suggestDatabaseName(data.name)).slice(0, 63);
+    const enabledFeatures =
+      data.enabledFeatures && data.enabledFeatures.length > 0
+        ? data.enabledFeatures
+        : [...DEFAULT_ENABLED_FEATURES];
+
+    const slug = await this.allocateUniqueSlug(data.name);
+    const requestedSubdomain = data.subdomain?.trim().toLowerCase() || null;
+    let subdomain = requestedSubdomain || slug;
+    if (requestedSubdomain && requestedSubdomain !== slug) {
+      const subdomainTaken = await this.prisma.organization.findFirst({
+        where: {
+          OR: [{ slug: requestedSubdomain }, { subdomain: requestedSubdomain }],
+        },
+        select: { id: true },
+      });
+      if (subdomainTaken || RESERVED_PROJECT_SLUGS.has(requestedSubdomain)) {
+        throw new BadRequestException('Subdomain is already in use or reserved');
+      }
+    }
+
     const org = await this.prisma.$transaction(async (tx) => {
       const created = await tx.organization.create({
         data: {
-          name,
-          code: code ?? null,
-          slug: this.slugify(name),
+          name: data.name,
+          code: data.code ?? null,
+          description: data.description?.trim() || null,
+          logoUrl: data.logoUrl?.trim() || null,
+          version: data.version?.trim() || '1.0.0',
+          databaseName,
+          slug,
           ownerId: userId,
+          theme: data.theme ?? 'default',
+          currency: data.currency ?? 'USD',
+          language: data.language ?? 'en',
+          timezone: data.timezone ?? 'UTC',
+          subdomain,
+          status: data.status ?? 'ACTIVE',
+          isActive: (data.status ?? 'ACTIVE') !== 'ARCHIVED' && (data.status ?? 'ACTIVE') !== 'SUSPENDED',
+          enabledFeatures,
           members: {
             create: {
               userId,
@@ -150,11 +261,61 @@ export class OrganizationsService {
     });
 
     const ownerMember = org.members[0];
+    // Platform IAM seed remains as fallback for orgs without a project DB.
     if (ownerMember) {
       await this.iamSeed.seedOrganization(org.id, ownerMember.id);
     }
 
-    return this.toOrg(org);
+    const ownerUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!ownerUser) {
+      throw new NotFoundException('Owner user not found');
+    }
+
+    const provision = await this.dbProvisioner.provision({
+      databaseName,
+      organizationId: org.id,
+      owner: {
+        id: ownerUser.id,
+        email: ownerUser.email,
+        passwordHash: ownerUser.passwordHash,
+        firstName: ownerUser.firstName,
+        lastName: ownerUser.lastName,
+        phone: ownerUser.phone,
+        avatarUrl: ownerUser.avatarUrl,
+      },
+    });
+
+    let updated: Organization = org;
+    if (provision.ok) {
+      updated = await this.prisma.organization.update({
+        where: { id: org.id },
+        data: {
+          databaseName: provision.databaseName,
+          // Local/dev: plain connection string until encryption lands later
+          connectionString: provision.connectionString,
+        },
+      });
+    } else if (provision.databaseName) {
+      // Still record intended database name even when CREATE DATABASE failed.
+      updated = await this.prisma.organization.update({
+        where: { id: org.id },
+        data: { databaseName: provision.databaseName },
+      });
+    }
+
+    const warningParts: string[] = [];
+    if (!provision.ok) {
+      warningParts.push(provision.warning);
+    } else if (!provision.seeded) {
+      warningParts.push(
+        `Database "${provision.databaseName}" was created and schema applied, but IAM seed failed. Retry open/seed or check API logs.`,
+      );
+    }
+
+    return this.toOrg(updated, 'OWNER', {
+      databaseProvisioned: provision.ok,
+      ...(warningParts.length ? { provisioningWarning: warningParts.join(' ') } : {}),
+    });
   }
 
   async listMyOrganizations(userId: string): Promise<OrganizationDto[]> {
@@ -163,7 +324,9 @@ export class OrganizationsService {
       include: { organization: true },
       orderBy: { joinedAt: 'asc' },
     });
-    return memberships.map((m) => this.toOrg(m.organization));
+    return memberships.map((m) =>
+      this.toOrg(m.organization, m.role as OrganizationDto['membershipRole']),
+    );
   }
 
   async getOrganization(orgId: string): Promise<OrganizationDto> {
@@ -174,10 +337,82 @@ export class OrganizationsService {
 
   async updateOrganization(
     orgId: string,
-    data: { name?: string; code?: string; isActive?: boolean },
+    data: {
+      name?: string;
+      code?: string;
+      description?: string | null;
+      logoUrl?: string | null;
+      version?: string;
+      databaseName?: string;
+      isActive?: boolean;
+      theme?: string;
+      currency?: string;
+      language?: string;
+      timezone?: string;
+      subdomain?: string | null;
+      status?: string;
+      enabledFeatures?: string[];
+    },
   ): Promise<OrganizationDto> {
-    const org = await this.prisma.organization.update({ where: { id: orgId }, data });
+    const patch: Prisma.OrganizationUpdateInput = {};
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.code !== undefined) patch.code = data.code;
+    if (data.description !== undefined) patch.description = data.description;
+    if (data.logoUrl !== undefined) patch.logoUrl = data.logoUrl;
+    if (data.version !== undefined) patch.version = data.version;
+    if (data.databaseName !== undefined) patch.databaseName = data.databaseName;
+    if (data.theme !== undefined) patch.theme = data.theme;
+    if (data.currency !== undefined) patch.currency = data.currency;
+    if (data.language !== undefined) patch.language = data.language;
+    if (data.timezone !== undefined) patch.timezone = data.timezone;
+    if (data.subdomain !== undefined) patch.subdomain = data.subdomain;
+    if (data.status !== undefined) {
+      patch.status = data.status;
+      if (data.isActive === undefined) {
+        patch.isActive = data.status !== 'ARCHIVED' && data.status !== 'SUSPENDED';
+      }
+    }
+    if (data.isActive !== undefined) patch.isActive = data.isActive;
+    if (data.enabledFeatures !== undefined) patch.enabledFeatures = data.enabledFeatures;
+    const org = await this.prisma.organization.update({ where: { id: orgId }, data: patch });
     return this.toOrg(org);
+  }
+
+  listFeatureCatalog(): PlatformFeatureCatalogItem[] {
+    return PLATFORM_FEATURE_CATALOG;
+  }
+
+  async installFeature(orgId: string, featureId: string): Promise<OrganizationDto> {
+    const feature = PLATFORM_FEATURE_CATALOG.find((f) => f.id === featureId);
+    if (!feature) throw new BadRequestException(`Unknown feature: ${featureId}`);
+    if (feature.comingSoon) {
+      throw new BadRequestException(`${feature.name} is coming soon and cannot be installed yet`);
+    }
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    if (!org) throw new NotFoundException('Organization not found');
+    const current = this.parseEnabledFeatures(org.enabledFeatures);
+    if (current.includes(featureId)) return this.toOrg(org);
+    const enabledFeatures = [...current, featureId];
+    const updated = await this.prisma.organization.update({
+      where: { id: orgId },
+      data: { enabledFeatures },
+    });
+    return this.toOrg(updated);
+  }
+
+  async uninstallFeature(orgId: string, featureId: string): Promise<OrganizationDto> {
+    const feature = PLATFORM_FEATURE_CATALOG.find((f) => f.id === featureId);
+    if (!feature) throw new BadRequestException(`Unknown feature: ${featureId}`);
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    if (!org) throw new NotFoundException('Organization not found');
+    const enabledFeatures = this.parseEnabledFeatures(org.enabledFeatures).filter(
+      (id) => id !== featureId,
+    );
+    const updated = await this.prisma.organization.update({
+      where: { id: orgId },
+      data: { enabledFeatures },
+    });
+    return this.toOrg(updated);
   }
 
   // Branches

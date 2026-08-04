@@ -19,6 +19,7 @@ import {
   CreateDesignationDto,
   CreateOrganizationDto,
   CreateTeamDto,
+  ToggleFeatureDto,
   UpdateBranchDto,
   UpdateCostCenterDto,
   UpdateDepartmentDto,
@@ -34,12 +35,17 @@ export class OrganizationsController {
 
   @Post()
   create(@CurrentUser() user: JwtPayloadUser, @Body() dto: CreateOrganizationDto) {
-    return this.orgs.createOrganization(user.userId, dto.name, dto.code);
+    return this.orgs.createOrganization(user.userId, dto);
   }
 
   @Get()
   listMine(@CurrentUser() user: JwtPayloadUser) {
     return this.orgs.listMyOrganizations(user.userId);
+  }
+
+  @Get('features/catalog')
+  featureCatalog() {
+    return this.orgs.listFeatureCatalog();
   }
 
   @UseGuards(OrgGuard)
@@ -53,6 +59,20 @@ export class OrganizationsController {
   @Patch('current')
   updateCurrent(@CurrentOrg() org: OrgContext, @Body() dto: UpdateOrganizationDto) {
     return this.orgs.updateOrganization(org.organizationId, dto);
+  }
+
+  @UseGuards(OrgGuard)
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Post('features/install')
+  installFeature(@CurrentOrg() org: OrgContext, @Body() dto: ToggleFeatureDto) {
+    return this.orgs.installFeature(org.organizationId, dto.featureId);
+  }
+
+  @UseGuards(OrgGuard)
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Post('features/uninstall')
+  uninstallFeature(@CurrentOrg() org: OrgContext, @Body() dto: ToggleFeatureDto) {
+    return this.orgs.uninstallFeature(org.organizationId, dto.featureId);
   }
 
   // Branches — company can have multiple branches

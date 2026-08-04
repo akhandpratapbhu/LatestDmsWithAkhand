@@ -3,16 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "build": "npm run prisma:generate && nest build",
     "dev": "nest start --watch",
-    "build": "nest build",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "prisma:generate": "prisma generate",
+    "prisma:generate": "prisma generate && prisma generate --schema=prisma/schema-project.prisma",
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push",
+    "prisma:push:project": "prisma db push --schema=prisma/schema-project.prisma",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "ts-node --transpile-only prisma/seed-demo.ts"
+    "prisma:seed": "ts-node --transpile-only prisma/seed-demo.ts",
+    "prisma:seed:org-roles": "ts-node --transpile-only prisma/seed-org-roles.ts"
   },
   "dependencies": {
     "@dms/shared": "*",

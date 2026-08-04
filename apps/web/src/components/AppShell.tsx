@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import {
+  menuPathsForFeatures,
+  resolveAppHref,
+  toCanonicalAppPath,
+} from '@dms/shared';
 import { useAuth } from '../features/auth/auth-context';
 import { useOrg } from '../features/org/org-context';
 import { useIam } from '../features/iam/iam-context';
@@ -11,9 +16,13 @@ import { SearchModal } from './SearchModal';
 const HIDDEN_SIDEBAR_PATHS = new Set(['/app/notifications', '/app/profile', '/app/search']);
 const SIDEBAR_OPEN_KEY = 'dms_sidebar_open_groups';
 
-function titleFromPath(pathname: string): string {
-  if (pathname === '/app' || pathname === '/app/') return 'Overview';
-  const last = pathname.split('/').filter(Boolean).pop() ?? 'Workspace';
+function titleFromPath(pathname: string, projectSlug?: string | null): string {
+  const canonical = toCanonicalAppPath(pathname, projectSlug);
+  if (canonical === '/app' || canonical === '/app/') return 'Overview';
+  if (canonical.startsWith('/app/projects')) return 'Project Dashboard';
+  if (canonical.startsWith('/app/features')) return 'Features';
+  if (canonical.startsWith('/app/settings/login')) return 'Login page';
+  const last = canonical.split('/').filter(Boolean).pop() ?? 'Workspace';
   return last
     .split('-')
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
@@ -34,6 +43,8 @@ export function AppShell() {
   const { user, logout } = useAuth();
   const { organizations, currentOrg, selectOrg } = useOrg();
   const { sidebar, loading } = useIam();
+  const { projectSlug: routeSlug } = useParams<{ projectSlug?: string }>();
+  const projectSlug = routeSlug?.trim() || currentOrg?.slug?.trim() || null;
   const [unread, setUnread] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -41,25 +52,44 @@ export function AppShell() {
   const menuRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const pageTitle = useMemo(() => titleFromPath(location.pathname), [location.pathname]);
+  const pageTitle = useMemo(
+    () => titleFromPath(location.pathname, routeSlug),
+    [location.pathname, routeSlug],
+  );
+
+  const hrefFor = useMemo(
+    () => (appPath: string) => resolveAppHref(appPath, projectSlug),
+    [projectSlug],
+  );
+
+  const featureAllowedPaths = useMemo(
+    () => menuPathsForFeatures(currentOrg?.enabledFeatures ?? []),
+    [currentOrg?.enabledFeatures],
+  );
 
   const visibleGroups = useMemo(() => {
     if (!sidebar?.groups) return [];
     return sidebar.groups
       .map((group) => ({
         ...group,
-        menus: group.menus.filter((menu) => menu.path && !HIDDEN_SIDEBAR_PATHS.has(menu.path)),
+        menus: group.menus.filter((menu) => {
+          if (!menu.path || HIDDEN_SIDEBAR_PATHS.has(menu.path)) return false;
+          return featureAllowedPaths.has(menu.path);
+        }),
       }))
       .filter((group) => group.menus.length > 0);
-  }, [sidebar?.groups]);
+  }, [sidebar?.groups, featureAllowedPaths]);
 
   useEffect(() => {
     // Keep the group containing the active route expanded
     const activeGroup = visibleGroups.find((group) =>
       group.menus.some((menu) => {
         if (!menu.path) return false;
-        if (menu.path === '/app') return location.pathname === '/app' || location.pathname === '/app/';
-        return location.pathname === menu.path || location.pathname.startsWith(`${menu.path}/`);
+        const href = hrefFor(menu.path);
+        if (menu.path === '/app') {
+          return location.pathname === href || location.pathname === `${href}/`;
+        }
+        return location.pathname === href || location.pathname.startsWith(`${href}/`);
       }),
     );
     if (!activeGroup) return;
@@ -69,7 +99,7 @@ export function AppShell() {
       localStorage.setItem(SIDEBAR_OPEN_KEY, JSON.stringify(next));
       return next;
     });
-  }, [location.pathname, visibleGroups]);
+  }, [location.pathname, visibleGroups, hrefFor]);
 
   function toggleGroup(groupId: string) {
     setOpenGroups((prev) => {
@@ -130,16 +160,26 @@ export function AppShell() {
   async function onLogout() {
     setMenuOpen(false);
     await logout();
-    navigate('/login');
+    navigate(routeSlug ? `/${encodeURIComponent(routeSlug)}/login` : '/login');
+  }
+
+  function onSwitchProject(id: string) {
+    const org = organizations.find((o) => o.id === id);
+    selectOrg(id);
+    if (!org?.slug) return;
+    if (routeSlug) {
+      const canonical = toCanonicalAppPath(location.pathname, routeSlug);
+      navigate(resolveAppHref(canonical, org.slug));
+    }
   }
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <Link to="/app" className="brand-mark compact">
-            <span className="brand-badge">D</span>
-            DMS
+          <Link to="/app/projects" className="brand-mark compact">
+            <span className="brand-badge">E</span>
+            Enterprise Builder
           </Link>
           <span className="sidebar-env">Local</span>
         </div>
@@ -176,19 +216,22 @@ export function AppShell() {
                   </button>
                   {open && (
                     <div className="nav-group-items">
-                      {group.menus.map((menu) => (
-                        <NavLink key={menu.id} to={menu.path!} end={menu.path === '/app'}>
-                          <span>{menu.label}</span>
-                        </NavLink>
-                      ))}
+                      {group.menus.map((menu) => {
+                        const to = hrefFor(menu.path!);
+                        return (
+                          <NavLink key={menu.id} to={to} end={menu.path === '/app'}>
+                            <span>{menu.label}</span>
+                          </NavLink>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
               );
             })}
           {!loading && !visibleGroups.length && (
-            <NavLink to="/app" end>
-              Overview
+            <NavLink to={hrefFor('/app')} end>
+              Dashboard
             </NavLink>
           )}
         </nav>
@@ -214,23 +257,27 @@ export function AppShell() {
               <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
               <path d="M16.2 16.2 20 20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
-            <span>Search workspace…</span>
+            <span>Search platform…</span>
             <kbd>⌘K</kbd>
           </button>
 
           {organizations.length > 0 && (
-            <select
-              className="header-org"
-              value={currentOrg?.id ?? ''}
-              onChange={(e) => selectOrg(e.target.value)}
-              aria-label="Organization"
-            >
-              {organizations.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
+            <label className="header-project-switcher">
+              <span className="header-project-label">Project</span>
+              <select
+                className="header-org"
+                value={currentOrg?.id ?? ''}
+                onChange={(e) => onSwitchProject(e.target.value)}
+                aria-label="Switch project"
+                title="Switch project"
+              >
+                {organizations.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
 
           <button
@@ -247,7 +294,7 @@ export function AppShell() {
           </button>
 
           <Link
-            to="/app/notifications"
+            to={hrefFor('/app/notifications')}
             className="header-icon-btn"
             aria-label={unread > 0 ? `${unread} unread notifications` : 'Notifications'}
             title="Notifications"
@@ -309,7 +356,7 @@ export function AppShell() {
                   role="menuitem"
                   onClick={() => {
                     setMenuOpen(false);
-                    navigate('/app/profile');
+                    navigate(hrefFor('/app/profile'));
                   }}
                 >
                   Profile

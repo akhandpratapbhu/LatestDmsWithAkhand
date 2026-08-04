@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { orgApi } from '../../lib/api';
+import { useWorkspaceHref } from '../../lib/workspace-path';
 import { useOrg } from '../org/org-context';
 
 type SearchHit = {
@@ -25,6 +26,7 @@ type SearchPanelProps = {
 
 export function SearchPanel({ autoFocus = false, onNavigate }: SearchPanelProps) {
   const { currentOrg } = useOrg();
+  const href = useWorkspaceHref();
   const inputRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState('');
   const [scope, setScope] = useState('ALL');
@@ -174,7 +176,7 @@ export function SearchPanel({ autoFocus = false, onNavigate }: SearchPanelProps)
                 [{r.type}] {r.title}
               </strong>
               {r.path && (
-                <Link to={r.path} className="muted" onClick={() => onNavigate?.()}>
+                <Link to={href(r.path)} className="muted" onClick={() => onNavigate?.()}>
                   Open
                 </Link>
               )}

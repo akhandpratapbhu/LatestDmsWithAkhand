@@ -12,6 +12,7 @@ import { OrgRole, PermissionType } from '@prisma/client';
 import { CurrentUser, JwtPayloadUser } from '../auth/decorators/current-user.decorator';
 import { CurrentOrg, OrgContext, OrgGuard, RequireOrgRoles } from '../organizations/org.guard';
 import { IamService } from './iam.service';
+import { LoginPageConfigService } from './login-page-config.service';
 import {
   AssignMemberRolesDto,
   CreateIamRoleDto,
@@ -20,11 +21,15 @@ import {
   CreatePermissionDto,
   UpdateIamRoleDto,
 } from './dto/iam.dto';
+import { UpdateLoginPageConfigDto } from './dto/login-page.dto';
 
 @Controller('iam')
 @UseGuards(OrgGuard)
 export class IamController {
-  constructor(private readonly iam: IamService) {}
+  constructor(
+    private readonly iam: IamService,
+    private readonly loginPage: LoginPageConfigService,
+  ) {}
 
   @Get('sidebar')
   sidebar(@CurrentOrg() org: OrgContext, @CurrentUser() user: JwtPayloadUser) {
@@ -34,6 +39,12 @@ export class IamController {
   @Get('permissions/me')
   myPermissions(@CurrentOrg() org: OrgContext, @CurrentUser() user: JwtPayloadUser) {
     return this.iam.getMemberPermissionCodes(org.organizationId, user.userId);
+  }
+
+  @Get('members/:userId/permissions')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  memberPermissions(@CurrentOrg() org: OrgContext, @Param('userId') userId: string) {
+    return this.iam.getMemberPermissionsForUser(org.organizationId, userId);
   }
 
   @Get('roles')
@@ -99,5 +110,17 @@ export class IamController {
     @Body() dto: AssignMemberRolesDto,
   ) {
     return this.iam.assignMemberRoles(org.organizationId, userId, dto.roleIds);
+  }
+
+  @Get('login-page')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  getLoginPage(@CurrentOrg() org: OrgContext) {
+    return this.loginPage.get(org.organizationId);
+  }
+
+  @Patch('login-page')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  updateLoginPage(@CurrentOrg() org: OrgContext, @Body() dto: UpdateLoginPageConfigDto) {
+    return this.loginPage.update(org.organizationId, dto);
   }
 }

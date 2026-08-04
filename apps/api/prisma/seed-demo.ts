@@ -1,11 +1,15 @@
 /**
- * Demo seed: role-wise dashboards + users for local UI testing.
- * Run: npm run db:seed
+ * Seed entrypoint.
  *
- * Logins (password for all: Password1)
- * - admin@dms.local   → Admin dashboard (full sidebar)
- * - manager@dms.local → Manager dashboard
- * - member@dms.local  → Member dashboard (limited menus)
+ * Default (safe): only ensures the platform admin who can create projects.
+ *   Email: akhandpratap121196@gmail.com
+ *   Sets isPlatformAdmin=true; does not reset password if the user already exists.
+ *
+ * Full demo data (admin@dms.local / manager / member + Demo Company):
+ *   SEED_DEMO_USERS=1 npm run db:seed
+ * Demo users are never platform admins.
+ *
+ * Run: npm run db:seed
  */
 import 'reflect-metadata';
 import { PrismaClient, Prisma } from '@prisma/client';
@@ -14,12 +18,60 @@ import { IamSeedService } from '../src/modules/iam/iam-seed.service';
 
 const prisma = new PrismaClient();
 const PASSWORD = 'Password1';
+const PLATFORM_ADMIN_EMAIL = 'akhandpratap121196@gmail.com';
+
+async function ensurePlatformAdmin() {
+  const existing = await prisma.user.findFirst({
+    where: { email: { equals: PLATFORM_ADMIN_EMAIL, mode: 'insensitive' } },
+  });
+
+  if (existing) {
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        isPlatformAdmin: true,
+        isActive: true,
+        status: 'ACTIVE',
+      },
+    });
+    // Ensure no other user is a platform admin
+    await prisma.user.updateMany({
+      where: { id: { not: existing.id }, isPlatformAdmin: true },
+      data: { isPlatformAdmin: false },
+    });
+    return existing;
+  }
+
+  const passwordHash = await bcrypt.hash(PASSWORD, 10);
+  const created = await prisma.user.create({
+    data: {
+      email: PLATFORM_ADMIN_EMAIL,
+      firstName: 'Akhand',
+      lastName: 'Pratap',
+      passwordHash,
+      status: 'ACTIVE',
+      isActive: true,
+      isPlatformAdmin: true,
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    },
+  });
+  await prisma.user.updateMany({
+    where: { id: { not: created.id }, isPlatformAdmin: true },
+    data: { isPlatformAdmin: false },
+  });
+  console.log(
+    `Created platform admin ${PLATFORM_ADMIN_EMAIL} with password ${PASSWORD} — change it after first login.`,
+  );
+  return created;
+}
 
 async function upsertUser(input: {
   email: string;
   firstName: string;
   lastName: string;
   passwordHash: string;
+  organizationId?: string | null;
 }) {
   return prisma.user.upsert({
     where: { email: input.email },
@@ -29,8 +81,12 @@ async function upsertUser(input: {
       passwordHash: input.passwordHash,
       status: 'ACTIVE',
       isActive: true,
+      isPlatformAdmin: false,
       emailVerified: true,
       emailVerifiedAt: new Date(),
+      ...(input.organizationId !== undefined
+        ? { organizationId: input.organizationId }
+        : {}),
     },
     create: {
       email: input.email,
@@ -39,13 +95,25 @@ async function upsertUser(input: {
       passwordHash: input.passwordHash,
       status: 'ACTIVE',
       isActive: true,
+      isPlatformAdmin: false,
       emailVerified: true,
       emailVerifiedAt: new Date(),
+      organizationId: input.organizationId ?? null,
     },
   });
 }
 
 async function main() {
+  const platformAdmin = await ensurePlatformAdmin();
+  console.log(`Platform admin: ${platformAdmin.email} (isPlatformAdmin=true)`);
+
+  if (process.env.SEED_DEMO_USERS !== '1') {
+    console.log(
+      'Skipping demo users/org. Set SEED_DEMO_USERS=1 to seed admin@dms.local and related demo data.',
+    );
+    return;
+  }
+
   const passwordHash = await bcrypt.hash(PASSWORD, 10);
 
   const admin = await upsertUser({
@@ -66,6 +134,9 @@ async function main() {
     lastName: 'Member',
     passwordHash,
   });
+
+  // Re-assert sole platform admin after demo upserts
+  await ensurePlatformAdmin();
 
   let org = await prisma.organization.findFirst({ where: { slug: 'demo-company' } });
   if (!org) {
@@ -101,6 +172,12 @@ async function main() {
   const adminMember = await ensureMember(admin.id, 'OWNER');
   const managerMember = await ensureMember(manager.id, 'MEMBER');
   const memberMember = await ensureMember(member.id, 'MEMBER');
+
+  // Home org on user row (demo users belong to Demo Company only).
+  await prisma.user.updateMany({
+    where: { id: { in: [admin.id, manager.id, member.id] } },
+    data: { organizationId: org.id },
+  });
 
   // Attach every DB user to Demo Company so Users grid matches `users` table
   const allDbUsers = await prisma.user.findMany({ select: { id: true } });
@@ -247,8 +324,7 @@ async function main() {
     { path: '/app/activity', label: 'Activity', icon: 'activity', permissionCode: 'menu.activity', groupId: mainGroup.id, sortOrder: 5 },
     { path: '/app/organization', label: 'Organization', icon: 'building', permissionCode: 'menu.organization', groupId: accessGroup.id, sortOrder: 1 },
     { path: '/app/users', label: 'Users', icon: 'users', permissionCode: 'menu.users', groupId: accessGroup.id, sortOrder: 2 },
-    { path: '/app/iam', label: 'IAM', icon: 'key', permissionCode: 'menu.iam', groupId: accessGroup.id, sortOrder: 3 },
-    { path: '/app/masters', label: 'Masters', icon: 'database', permissionCode: 'menu.masters', groupId: configGroup.id, sortOrder: 1 },
+    { path: '/app/iam', label: 'Identity & Access', icon: 'key', permissionCode: 'menu.iam', groupId: accessGroup.id, sortOrder: 3 },
     { path: '/app/forms', label: 'Forms', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 2 },
     { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: configGroup.id, sortOrder: 3 },
     { path: '/app/dashboards', label: 'Dashboards', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, sortOrder: 4 },
@@ -261,6 +337,11 @@ async function main() {
 
   const allPermsForMenus = await prisma.permission.findMany({ where: { organizationId: org.id } });
   const permByCode = Object.fromEntries(allPermsForMenus.map((p) => [p.code, p.id]));
+
+  await prisma.menu.updateMany({
+    where: { organizationId: org.id, path: '/app/masters' },
+    data: { isActive: false },
+  });
 
   for (const m of menuLayout) {
     const existingMenu = await prisma.menu.findFirst({
@@ -376,14 +457,11 @@ async function main() {
     'menu.sessions',
     'menu.chat',
     'menu.calls',
-    'menu.masters',
     'screen.organization',
     'screen.users',
     'screen.chat',
     'screen.calls',
-    'screen.masters',
     'api.users.write',
-    'api.masters.write',
     'data.users.all',
     'data.users.own',
   ];
@@ -400,7 +478,6 @@ async function main() {
     '/app',
     '/app/organization',
     '/app/users',
-    '/app/masters',
     '/app/chat',
     '/app/calls',
     '/app/profile',
@@ -877,8 +954,9 @@ async function main() {
 
   console.log('Demo seed complete.\n');
   console.log('Organization: Demo Company');
-  console.log('Password for all: Password1\n');
-  console.log('admin@dms.local   → Admin Command Center (full menus)');
+  console.log('Password for all demo users: Password1\n');
+  console.log(`Platform admin (can create projects): ${PLATFORM_ADMIN_EMAIL}`);
+  console.log('admin@dms.local   → Admin Command Center (full menus) — NOT a platform admin');
   console.log('manager@dms.local → Manager Workspace (org + users)');
   console.log('member@dms.local  → Member Home (limited menus)');
   console.log('Sample form: EMP_ONBOARD · Sample grid: CONTACTS');

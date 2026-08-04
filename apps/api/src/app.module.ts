@@ -7,6 +7,7 @@ import { LoggerModule } from './common/logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { MailModule } from './mail/mail.module';
+import { ProjectDbModule } from './modules/project-db/project-db.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -33,6 +34,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     LoggerModule,
     PrismaModule,
+    ProjectDbModule,
     RedisModule,
     MailModule,
     OrganizationsModule,

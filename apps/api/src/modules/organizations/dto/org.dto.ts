@@ -1,5 +1,7 @@
 import {
+  IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -8,6 +10,8 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+
+const PROJECT_STATUSES = ['ACTIVE', 'DRAFT', 'ARCHIVED', 'SUSPENDED'] as const;
 
 export class CreateOrganizationDto {
   @IsString()
@@ -19,6 +23,68 @@ export class CreateOrganizationDto {
   @IsString()
   @MaxLength(40)
   code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  logoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  theme?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  currency?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  language?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(63)
+  @Matches(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, {
+    message: 'subdomain must be lowercase alphanumeric with optional hyphens',
+  })
+  subdomain?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(PROJECT_STATUSES)
+  status?: (typeof PROJECT_STATUSES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  version?: string;
+
+  /** Override auto-generated Postgres database name (e.g. hospital_management_db). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(63)
+  @Matches(/^[a-z][a-z0-9_]{0,62}$/, {
+    message: 'databaseName must be lowercase alphanumeric with underscores',
+  })
+  databaseName?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  enabledFeatures?: string[];
 }
 
 export class UpdateOrganizationDto {
@@ -34,8 +100,74 @@ export class UpdateOrganizationDto {
   code?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  logoUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  version?: string;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  theme?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  currency?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  language?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(63)
+  @Matches(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, {
+    message: 'subdomain must be lowercase alphanumeric with optional hyphens',
+  })
+  subdomain?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(PROJECT_STATUSES)
+  status?: (typeof PROJECT_STATUSES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(63)
+  @Matches(/^[a-z][a-z0-9_]{0,62}$/)
+  databaseName?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  enabledFeatures?: string[];
+}
+
+export class ToggleFeatureDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  featureId!: string;
 }
 
 export class CreateBranchDto {

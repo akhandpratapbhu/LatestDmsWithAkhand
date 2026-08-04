@@ -1,3 +1,8 @@
+// Platform database schema (DATABASE_URL / typically `dms`).
+// Holds platform auth, Organization (project) metadata, membership to open projects,
+// enabledFeatures, and still-shared business tables (Forms/Grids/Chat/…).
+// Project-scoped IAM / users / LoginPageConfig live in schema-project.prisma (per-project DBs).
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -120,10 +125,17 @@ model User {
   emailVerified   Boolean           @default(false)
   emailVerifiedAt DateTime?
   isActive        Boolean           @default(true)
+  /// Platform-wide admin: can create projects (POST /organizations). Not an org-level role.
+  isPlatformAdmin Boolean           @default(false)
+  /// Home/primary organization set at create time (org-scoped create/invite).
+  /// Nullable for platform admins, self-register, and multi-org accounts.
+  /// Multi-org access still uses OrganizationMember — do not remove that table.
+  organizationId  String?
   status          UserAccountStatus @default(ACTIVE)
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
+  organization        Organization?            @relation("UserHomeOrg", fields: [organizationId], references: [id], onDelete: SetNull)
   sessions            Session[]
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
@@ -152,6 +164,7 @@ model User {
   linkedDealers       Dealer[]                @relation("DealerLinkedUser")
   linkedEmployees     Employee[]              @relation("EmployeeLinkedUser")
 
+  @@index([organizationId])
   @@map("users")
 }
 
@@ -219,16 +232,33 @@ model EmailVerificationToken {
 }
 
 model Organization {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  code      String?
-  isActive  Boolean  @default(true)
-  ownerId   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(uuid())
+  name             String
+  slug             String   @unique
+  code             String?
+  description      String?
+  logoUrl          String?
+  version          String   @default("1.0.0")
+  /// Logical Postgres database name for this project (e.g. hospital_management_db)
+  databaseName     String?
+  isActive         Boolean  @default(true)
+  /// Product-facing project lifecycle: ACTIVE | DRAFT | ARCHIVED | SUSPENDED
+  status           String   @default("ACTIVE")
+  theme            String   @default("default")
+  currency         String   @default("USD")
+  language         String   @default("en")
+  timezone         String   @default("UTC")
+  subdomain        String?  @unique
+  /// Local/dev: plain connection string after CREATE DATABASE attempt. Encrypt in Phase 2b+.
+  connectionString String?
+  /// Installed platform feature keys (JSON string array), e.g. ["dashboard","forms"]
+  enabledFeatures  Json     @default("[\"dashboard\",\"users\",\"roles\",\"forms\",\"grids\",\"reports\",\"chat\",\"notifications\",\"audit\",\"activity\",\"sessions\",\"calls\",\"login-page\"]")
+  ownerId          String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   owner         User                 @relation("OrgOwner", fields: [ownerId], references: [id])
+  homeUsers     User[]               @relation("UserHomeOrg")
   members       OrganizationMember[]
   branches      Branch[]
   departments   Department[]
@@ -261,6 +291,7 @@ model Organization {
   callSessions  CallSession[]
 
   @@index([ownerId])
+  @@index([status])
   @@map("organizations")
 }
 
