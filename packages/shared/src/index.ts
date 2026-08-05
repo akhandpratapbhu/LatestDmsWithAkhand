@@ -1,3 +1,16 @@
+export {
+  PROJECT_THEME_IDS,
+  PROJECT_THEME_OPTIONS,
+  PROJECT_THEME_PRESETS,
+  resolveProjectThemeId,
+  getProjectThemePreset,
+  primaryColorOverrides,
+  buildThemeCssVars,
+  type ProjectThemeId,
+  type ProjectThemeTokens,
+  type ProjectThemeOption,
+} from './themes';
+
 export type ApiSuccess<T> = {
   success: true;
   data: T;
@@ -259,6 +272,68 @@ export type OrgUserDto = {
 export type PermissionType = 'SCREEN' | 'API' | 'DATA' | 'MENU';
 export type WidgetType = 'CHART' | 'CARD' | 'TABLE' | 'TEXT';
 
+/**
+ * Live data sources for role dashboard widgets.
+ * Hospital sources are scoped by the caller's IAM role (doctor/patient/admin).
+ * School sources use Dynamic Form submission counts (Phase-1).
+ */
+export type DashboardDataSource =
+  | 'hospital.pendingAppointments'
+  | 'hospital.todayAppointments'
+  | 'hospital.totalAppointments'
+  | 'hospital.completedAppointments'
+  | 'hospital.doctorsCount'
+  | 'hospital.patientsCount'
+  | 'hospital.upcomingAppointments'
+  | 'school.students'
+  | 'school.teachers'
+  | 'school.classes'
+  | 'school.attendanceRecords'
+  | 'school.feeCollections'
+  | 'school.examResults'
+  | 'school.submissionsTotal'
+  | 'school.formCount';
+
+export type DashboardWidgetConfig = {
+  /** Static display fallback */
+  valueLabel?: string;
+  body?: string;
+  metric?: string;
+  chartType?: string;
+  series?: Array<{ label: string; value: number }>;
+  /** Live metric / list source */
+  dataSource?: DashboardDataSource | string;
+  /** For `school.formCount` — Dynamic Form code */
+  formCode?: string;
+  /** Max rows for list widgets */
+  limit?: number;
+};
+
+export type DashboardWidgetDto = {
+  id: string;
+  type: WidgetType;
+  title: string;
+  config: DashboardWidgetConfig & Record<string, unknown>;
+  sortOrder: number;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+};
+
+export type DashboardDto = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  roleId: string | null;
+  isDefault: boolean;
+  isLanding: boolean;
+  updatedAt?: string;
+  role?: { id: string; name: string; code: string } | null;
+  widgets: DashboardWidgetDto[];
+};
+
 export type SidebarMenuDto = {
   id: string;
   label: string;
@@ -287,27 +362,17 @@ export type SidebarResponse = {
   landingPath: string;
 };
 
-export type DashboardWidgetDto = {
-  id: string;
-  type: WidgetType;
-  title: string;
-  config: Record<string, unknown>;
-  sortOrder: number;
-  posX: number;
-  posY: number;
-  width: number;
-  height: number;
-};
-
-export type DashboardDto = {
-  id: string;
+/** One project's menu tree for the platform DMS sidebar. */
+export type ProjectSidebarDto = {
+  organizationId: string;
   name: string;
   slug: string;
-  description: string | null;
-  roleId: string | null;
-  isDefault: boolean;
-  isLanding: boolean;
-  widgets: DashboardWidgetDto[];
+  enabledFeatures: string[];
+  groups: SidebarGroupDto[];
+};
+
+export type ProjectSidebarsResponse = {
+  projects: ProjectSidebarDto[];
 };
 
 /** Platform shell paths that stay visible regardless of installed features. */
@@ -378,8 +443,8 @@ export const PLATFORM_FEATURE_CATALOG: PlatformFeatureCatalogItem[] = [
   },
   {
     id: 'reports',
-    name: 'Reports',
-    description: 'Dashboards and report widgets.',
+    name: 'Dashboard Builder',
+    description: 'Role dashboards and live widgets.',
     category: 'Builders',
     menuPaths: ['/app/dashboards'],
   },

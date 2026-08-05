@@ -37,6 +37,11 @@ import { ActivityPage, AuditPage } from './features/audit/pages/ActivityAuditPag
 import { ChatPage } from './features/chat/pages/ChatPage';
 import { ProjectLoginPage } from './features/auth/pages/ProjectLoginPage';
 import { CallsPage } from './features/calls/pages/CallsPage';
+import { BookAppointmentPage } from './features/hospital/pages/BookAppointmentPage';
+import { MyAppointmentsPage } from './features/hospital/pages/MyAppointmentsPage';
+import { DoctorSchedulePage } from './features/hospital/pages/DoctorSchedulePage';
+import { DoctorPatientsPage } from './features/hospital/pages/DoctorPatientsPage';
+import { PatientProfilePage } from './features/hospital/pages/PatientProfilePage';
 import { AuthLayout } from './components/AuthLayout';
 import { AppShell } from './components/AppShell';
 
@@ -282,6 +287,11 @@ export function App() {
         <Route path="calls" element={<CallsPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="sessions" element={<SessionsPage />} />
+        <Route path="hospital/book" element={<BookAppointmentPage />} />
+        <Route path="hospital/my-appointments" element={<MyAppointmentsPage />} />
+        <Route path="hospital/schedule" element={<DoctorSchedulePage />} />
+        <Route path="hospital/patients" element={<DoctorPatientsPage />} />
+        <Route path="hospital/profile" element={<PatientProfilePage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />

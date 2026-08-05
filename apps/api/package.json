@@ -14,7 +14,11 @@
     "prisma:push:project": "prisma db push --schema=prisma/schema-project.prisma",
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node --transpile-only prisma/seed-demo.ts",
-    "prisma:seed:org-roles": "ts-node --transpile-only prisma/seed-org-roles.ts"
+    "prisma:seed:org-roles": "ts-node --transpile-only prisma/seed-org-roles.ts",
+    "prisma:seed:hospital": "ts-node --transpile-only prisma/seed-hospital-app.ts",
+    "prisma:seed:hospital-appointments": "ts-node --transpile-only prisma/seed-hospital-appointments.ts",
+    "prisma:seed:school": "ts-node --transpile-only prisma/seed-school-app.ts",
+    "prisma:seed:role-dashboards": "ts-node --transpile-only prisma/seed-role-dashboards.ts"
   },
   "dependencies": {
     "@dms/shared": "*",

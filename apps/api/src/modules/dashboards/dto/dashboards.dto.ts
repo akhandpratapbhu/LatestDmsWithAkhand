@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -7,7 +8,9 @@ import {
   IsString,
   Matches,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { WidgetType } from '@prisma/client';
 
 export class CreateDashboardDto {
@@ -135,4 +138,60 @@ export class SetLandingDto {
   @IsOptional()
   @IsString()
   path?: string;
+}
+
+export class UpsertRoleDashboardWidgetDto {
+  @IsEnum(WidgetType)
+  type!: WidgetType;
+
+  @IsString()
+  @MinLength(1)
+  title!: string;
+
+  @IsOptional()
+  @IsObject()
+  config?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsInt()
+  posX?: number;
+
+  @IsOptional()
+  @IsInt()
+  posY?: number;
+
+  @IsOptional()
+  @IsInt()
+  width?: number;
+
+  @IsOptional()
+  @IsInt()
+  height?: number;
+}
+
+export class UpsertRoleDashboardDto {
+  @IsString()
+  roleId!: string;
+
+  @IsString()
+  @MinLength(2)
+  name!: string;
+
+  @IsString()
+  @Matches(/^[a-z0-9-]+$/)
+  slug!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpsertRoleDashboardWidgetDto)
+  widgets?: UpsertRoleDashboardWidgetDto[];
 }

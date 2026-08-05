@@ -189,8 +189,14 @@ const HOSPITAL_ROLES: RoleDef[] = [
   {
     code: 'DOCTOR',
     name: 'Doctor',
-    description: 'Clinical care — charts, forms, collaboration',
-    permissionCodes: PERM.clinicalOps,
+    description: 'Clinical care — own schedule and patients',
+    permissionCodes: PERM.workspace,
+  },
+  {
+    code: 'PATIENT',
+    name: 'Patient',
+    description: 'Patient portal — profile and appointment booking',
+    permissionCodes: PERM.student,
   },
   {
     code: 'NURSE',
@@ -343,6 +349,12 @@ const TARGETS: OrgTarget[] = [
   { slug: 'school-management', label: 'School', roles: SCHOOL_ROLES },
   { slug: 'mahindra', label: 'Mahindra', roles: MAHINDRA_ROLES },
 ];
+
+const ORG_THEMES: Record<string, { theme: string; primaryColor: string }> = {
+  'hospital-management': { theme: 'hospital', primaryColor: '#0d9488' },
+  'school-management': { theme: 'school', primaryColor: '#b45309' },
+  mahindra: { theme: 'dms', primaryColor: '#3b82a0' },
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TenantDb = any;
@@ -527,6 +539,38 @@ async function main() {
       console.log(
         `\n── ${target.label} (${org.slug}) → ${useProject ? `project DB ${org.databaseName}` : 'platform DB'} ──`,
       );
+
+      const themeCfg = ORG_THEMES[target.slug];
+      if (themeCfg) {
+        await platform.organization.update({
+          where: { id: org.id },
+          data: { theme: themeCfg.theme },
+        });
+        console.log(`  Organization theme → ${themeCfg.theme}`);
+        if (useProject) {
+          const existingLogin = await db.loginPageConfig.findUnique({
+            where: { organizationId: org.id },
+          });
+          if (existingLogin) {
+            await db.loginPageConfig.update({
+              where: { organizationId: org.id },
+              data: { theme: themeCfg.theme, primaryColor: themeCfg.primaryColor },
+            });
+          } else {
+            await db.loginPageConfig.create({
+              data: {
+                organizationId: org.id,
+                companyName: org.name,
+                welcomeText: `Sign in to ${org.name}`,
+                theme: themeCfg.theme,
+                primaryColor: themeCfg.primaryColor,
+                enablePasswordLogin: true,
+              },
+            });
+          }
+          console.log(`  LoginPageConfig theme → ${themeCfg.theme}`);
+        }
+      }
 
       await clearRoles(db, org.id);
       await seedRoles(db, org.id, target.roles, KEEP_EMAIL);

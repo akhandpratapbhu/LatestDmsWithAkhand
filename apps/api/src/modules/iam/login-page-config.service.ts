@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaClient as ProjectPrismaClient } from '@dms/project-client';
-import type { PublicProjectLoginDto } from '@dms/shared';
+import { getProjectThemePreset, resolveProjectThemeId, type PublicProjectLoginDto } from '@dms/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProjectDbService } from '../project-db/project-db.service';
 import { ProjectIamSeedService } from '../iam/project-iam-seed.service';
@@ -127,9 +127,16 @@ export class LoginPageConfigService {
     await this.projectSeed.ensureLoginPageConfig(client, org.id, {
       companyName: org.name,
       description: org.description,
+      theme: org.theme,
+      logoUrl: org.logoUrl,
     });
     const row = await this.backfillDescriptionFromOrg(client, org.id, org.description);
     const dto = this.toDto(row);
+    const theme = resolveProjectThemeId(
+      dto.theme && dto.theme !== 'default' ? dto.theme : org.theme,
+    );
+    const primaryColor =
+      dto.primaryColor?.trim() || getProjectThemePreset(theme).primaryColor;
 
     return {
       project: {
@@ -145,8 +152,8 @@ export class LoginPageConfigService {
         description: dto.description ?? org.description,
         logoUrl: dto.logoUrl ?? org.logoUrl,
         backgroundUrl: dto.backgroundUrl,
-        theme: dto.theme,
-        primaryColor: dto.primaryColor,
+        theme,
+        primaryColor,
         enablePasswordLogin: dto.enablePasswordLogin,
         enableOtpLogin: dto.enableOtpLogin,
         enableTwoFactor: dto.enableTwoFactor,

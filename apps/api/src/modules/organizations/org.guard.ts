@@ -16,6 +16,10 @@ import { JwtPayloadUser } from '../auth/decorators/current-user.decorator';
 export const ORG_ROLES_KEY = 'orgRoles';
 export const RequireOrgRoles = (...roles: OrgRole[]) => SetMetadata(ORG_ROLES_KEY, roles);
 
+/** Skip X-Organization-Id requirement (e.g. multi-project sidebar listing). */
+export const SKIP_ORG_KEY = 'skipOrg';
+export const SkipOrg = () => SetMetadata(SKIP_ORG_KEY, true);
+
 export type OrgContext = {
   organizationId: string;
   membershipId: string;
@@ -35,6 +39,14 @@ export class OrgGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const skipOrg = this.reflector.getAllAndOverride<boolean>(SKIP_ORG_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (skipOrg) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest<
       Request & { user?: JwtPayloadUser; org?: OrgContext }
     >();
@@ -46,7 +58,12 @@ export class OrgGuard implements CanActivate {
     const orgId =
       (request.headers['x-organization-id'] as string | undefined) ||
       (request.params.organizationId as string | undefined) ||
-      (request.query.organizationId as string | undefined);
+      (request.query.organizationId as string | undefined) ||
+      (typeof request.body === 'object' &&
+      request.body &&
+      'organizationId' in request.body
+        ? (request.body as { organizationId?: string }).organizationId
+        : undefined);
 
     if (!orgId) {
       throw new ForbiddenException('X-Organization-Id header is required');

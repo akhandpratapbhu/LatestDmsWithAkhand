@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import type { LoginPageConfigDto } from '@dms/shared';
+import { PROJECT_THEME_OPTIONS, resolveProjectThemeId } from '@dms/shared';
 import { orgApi } from '../../../lib/api';
 import { useOrg } from '../../org/org-context';
 
@@ -192,10 +193,16 @@ export function LoginPageSettingsPage() {
         <div className="row-2">
           <label>
             Theme
-            <input
-              value={form.theme}
+            <select
+              value={resolveProjectThemeId(form.theme)}
               onChange={(e) => setForm((s) => ({ ...s, theme: e.target.value }))}
-            />
+            >
+              {PROJECT_THEME_OPTIONS.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Primary color

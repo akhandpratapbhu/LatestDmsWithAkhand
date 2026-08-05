@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { OrganizationDto, ProjectStatus } from '@dms/shared';
-import { projectDashboardPath, resolveAppHref, suggestProjectSlug } from '@dms/shared';
+import { getProjectThemePreset, projectDashboardPath, resolveAppHref, suggestProjectSlug } from '@dms/shared';
 import { useAuth } from '../../auth/auth-context';
 import { useOrg } from '../org-context';
 
@@ -176,7 +176,7 @@ export function ProjectsPage() {
                   <p className="muted project-card-desc">{project.description}</p>
                 ) : null}
                 <p className="muted tiny">
-                  Theme: {project.theme}
+                  Theme: {getProjectThemePreset(project.theme).label}
                   {project.code ? ` · ${project.code}` : ''}
                 </p>
                 <p className="muted tiny">

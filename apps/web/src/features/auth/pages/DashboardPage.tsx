@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { orgApi } from '../../../lib/api';
 import { useWorkspaceHref } from '../../../lib/workspace-path';
 import { useAuth } from '../../auth/auth-context';
 import { useOrg } from '../../org/org-context';
 import { PageHeader } from '../../../components/PageHeader';
+import { DashboardWidgetCard } from '../../dashboards/components/DashboardWidgetCard';
+import {
+  HospitalDashboardStats,
+  SchoolDashboardStats,
+} from '../../dashboards/live-data';
 
 type MineResponse = {
   landingPath: string;
@@ -20,6 +25,7 @@ type MineResponse = {
     }>;
     role?: { name: string; code: string } | null;
   } | null;
+  role?: { name: string; code: string } | null;
 };
 
 export function DashboardPage() {
@@ -28,6 +34,25 @@ export function DashboardPage() {
   const href = useWorkspaceHref();
   const [data, setData] = useState<MineResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hospitalLive, setHospitalLive] = useState<HospitalDashboardStats | null>(null);
+  const [schoolLive, setSchoolLive] = useState<SchoolDashboardStats | null>(null);
+
+  const isHospital = useMemo(
+    () =>
+      Boolean(
+        currentOrg?.slug?.includes('hospital') ||
+          currentOrg?.name?.toLowerCase().includes('hospital'),
+      ),
+    [currentOrg?.slug, currentOrg?.name],
+  );
+  const isSchool = useMemo(
+    () =>
+      Boolean(
+        currentOrg?.slug?.includes('school') ||
+          currentOrg?.name?.toLowerCase().includes('school'),
+      ),
+    [currentOrg?.slug, currentOrg?.name],
+  );
 
   useEffect(() => {
     if (!currentOrg) {
@@ -35,21 +60,45 @@ export function DashboardPage() {
       return;
     }
     void orgApi<MineResponse>('/dashboards/me')
-      .then(setData)
+      .then(async (mine) => {
+        setData(mine);
+        const widgets = mine.dashboard?.widgets ?? [];
+        const needsHospital = widgets.some((w) =>
+          String(w.config.dataSource ?? '').startsWith('hospital.'),
+        );
+        const needsSchool = widgets.some((w) =>
+          String(w.config.dataSource ?? '').startsWith('school.'),
+        );
+        if (needsHospital || isHospital) {
+          try {
+            setHospitalLive(await orgApi<HospitalDashboardStats>('/hospital/dashboard-stats'));
+          } catch {
+            setHospitalLive(null);
+          }
+        }
+        if (needsSchool || isSchool) {
+          try {
+            setSchoolLive(await orgApi<SchoolDashboardStats>('/school/dashboard-stats'));
+          } catch {
+            setSchoolLive(null);
+          }
+        }
+      })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load dashboard'));
-  }, [currentOrg?.id]);
+  }, [currentOrg?.id, isHospital, isSchool]);
+
+  const roleLabel =
+    data?.dashboard?.role?.name || data?.role?.name
+      ? `Role dashboard · ${data?.dashboard?.role?.name || data?.role?.name}`
+      : currentOrg
+        ? `Signed in to ${currentOrg.name}`
+        : 'Create a project to unlock your role dashboard.';
 
   return (
     <div>
       <PageHeader
         title={data?.dashboard?.name || `Welcome, ${user?.firstName}`}
-        description={
-          currentOrg
-            ? data?.dashboard?.role
-              ? `Role dashboard · ${data.dashboard.role.name}`
-              : `Signed in to ${currentOrg.name}`
-            : 'Create a project to unlock your role dashboard.'
-        }
+        description={roleLabel}
         actions={
           <>
             <Link className="btn secondary" to={href('/app/sessions')}>
@@ -67,21 +116,11 @@ export function DashboardPage() {
       {data?.dashboard?.widgets?.length ? (
         <div className="widget-grid">
           {data.dashboard.widgets.map((w) => (
-            <article key={w.id} className={`widget widget-${w.type.toLowerCase()}`}>
-              <h3>{w.title}</h3>
-              {w.type === 'CHART' && Array.isArray(w.config.series) ? (
-                <div className="chart-bars">
-                  {(w.config.series as Array<{ label: string; value: number }>).map((s) => (
-                    <div key={s.label} className="chart-bar-wrap">
-                      <div className="chart-bar" style={{ height: `${Math.max(8, s.value * 4)}px` }} />
-                      <span>{s.label}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p>{String(w.config.valueLabel || w.config.body || '—')}</p>
-              )}
-            </article>
+            <DashboardWidgetCard
+              key={w.id}
+              widget={w}
+              live={{ hospital: hospitalLive, school: schoolLive }}
+            />
           ))}
         </div>
       ) : (

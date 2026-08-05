@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { OrganizationDto, ProjectStatus } from '@dms/shared';
+import { PROJECT_THEME_OPTIONS, resolveProjectThemeId } from '@dms/shared';
 import { orgApi } from '../../../lib/api';
 import { useOrg } from '../org-context';
 
@@ -101,6 +102,15 @@ export function ProjectSettingsPage() {
           status: settings.status,
         }),
       });
+      const themeId = resolveProjectThemeId(settings.theme);
+      try {
+        await orgApi('/iam/login-page', {
+          method: 'PATCH',
+          body: JSON.stringify({ theme: themeId }),
+        });
+      } catch {
+        /* Login page config lives in project DB — ignore if not provisioned */
+      }
       setHydratedId(null);
       await refreshOrgs();
       setMessage('Project settings saved');
@@ -219,10 +229,16 @@ export function ProjectSettingsPage() {
           </label>
           <label>
             Theme
-            <input
-              value={settings.theme}
+            <select
+              value={resolveProjectThemeId(settings.theme)}
               onChange={(e) => setSettings((s) => ({ ...s, theme: e.target.value }))}
-            />
+            >
+              {PROJECT_THEME_OPTIONS.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
         <div className="row-2">

@@ -61,6 +61,19 @@ Runtime switching: `ProjectDbService.getClient(orgId)` caches a `PrismaClient` p
 | Project public login | `/:projectSlug/login` (slug, code, or subdomain); after login → `/{slug}/dashboard`. Preview from Login page settings. Legacy `/p/:slug/login` redirects. |
 | Project workspace URLs | After project login, in-app pages live under `/{slug}/…` (e.g. `/{slug}/users`, `/{slug}/features`). Platform Project Dashboard stays at `/app/projects`. |
 
+## Project themes
+
+Each project stores `Organization.theme` (platform DB) and optional `LoginPageConfig.theme` / `primaryColor` (project DB). Presets live in `@dms/shared` (`PROJECT_THEME_PRESETS`):
+
+| Preset | Feel |
+| --- | --- |
+| `default` | Enterprise Builder — teal accent, neutral chrome |
+| `hospital` | Clinical whites, medical teal, calm trust |
+| `school` | Academic navy + warm gold |
+| `dms` (`dealer` / `mahindra` aliases) | Charcoal industrial, steel blue + amber |
+
+On `/{slug}/…` and `/{slug}/login`, the web app sets `data-theme` + CSS variables on `document.documentElement` (platform `/app/*` stays `default`). Create Project / Project settings / Login page settings expose the preset dropdown. Seeds set hospital → `hospital`, school → `school`, Mahindra → `dms`.
+
 ## What works now
 
 | Area | Behavior |

@@ -21,6 +21,8 @@ import { AuditModule } from './modules/audit/audit.module';
 import { MastersModule } from './modules/masters/masters.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { CallsModule } from './modules/calls/calls.module';
+import { HospitalModule } from './modules/hospital/hospital.module';
+import { SchoolModule } from './modules/school/school.module';
 import { HealthController } from './health.controller';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 
@@ -49,6 +51,8 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
     MastersModule,
     ChatModule,
     CallsModule,
+    HospitalModule,
+    SchoolModule,
     AuthModule,
   ],
   controllers: [HealthController],

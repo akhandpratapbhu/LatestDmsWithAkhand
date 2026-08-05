@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
@@ -18,6 +19,7 @@ import {
   SetLandingDto,
   UpdateDashboardDto,
   UpdateWidgetDto,
+  UpsertRoleDashboardDto,
 } from './dto/dashboards.dto';
 
 @Controller('dashboards')
@@ -54,6 +56,12 @@ export class DashboardsController {
     return this.dashboards.create(org.organizationId, dto);
   }
 
+  @Put('role')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  upsertForRole(@CurrentOrg() org: OrgContext, @Body() dto: UpsertRoleDashboardDto) {
+    return this.dashboards.upsertForRole(org.organizationId, dto);
+  }
+
   @Patch('widgets/:widgetId')
   @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
   updateWidget(
@@ -68,6 +76,12 @@ export class DashboardsController {
   @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
   deleteWidget(@CurrentOrg() org: OrgContext, @Param('widgetId') widgetId: string) {
     return this.dashboards.deleteWidget(org.organizationId, widgetId);
+  }
+
+  @Get(':id')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  getOne(@CurrentOrg() org: OrgContext, @Param('id') id: string) {
+    return this.dashboards.getOne(org.organizationId, id);
   }
 
   @Patch(':id')

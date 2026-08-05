@@ -71,9 +71,45 @@ const emptySubmenuDraft = (): SubmenuDraft => ({
   isActive: true,
 });
 
+function ProjectField({
+  value,
+  onChange,
+  options,
+  required = true,
+  disabled = false,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  options: Array<{ id: string; name: string }>;
+  required?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <label>
+      Project
+      <select
+        required={required}
+        disabled={disabled || options.length === 0}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="" disabled>
+          Select a project…
+        </option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function MenuBuilderPage() {
-  const { currentOrg } = useOrg();
-  const { hasPermission, refreshSidebar } = useIam();
+  const { organizations, currentOrg } = useOrg();
+  const { hasPermission, refreshSidebar, refreshProjectSidebars } = useIam();
+  const [selectedProjectId, setSelectedProjectId] = useState(currentOrg?.id ?? '');
   const [groups, setGroups] = useState<MenuGroupRow[]>([]);
   const [forms, setForms] = useState<FormOption[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -86,15 +122,31 @@ export function MenuBuilderPage() {
   const [editSubmenu, setEditSubmenu] = useState<SubmenuDraft>(emptySubmenuDraft);
   const [busy, setBusy] = useState(false);
 
+  const projectOptions = useMemo(
+    () => organizations.map((o) => ({ id: o.id, name: o.name })),
+    [organizations],
+  );
+
+  const selectedProject = useMemo(
+    () => organizations.find((o) => o.id === selectedProjectId) ?? null,
+    [organizations, selectedProjectId],
+  );
+
   const mainMenus = useMemo(
     () => groups.filter((g) => !g.isOuter && g.id !== '__outer__'),
     [groups],
   );
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    if (currentOrg?.id && !selectedProjectId) {
+      setSelectedProjectId(currentOrg.id);
+    }
+  }, [currentOrg?.id, selectedProjectId]);
+
+  const load = useCallback(async (organizationId: string) => {
     const [menuGroups, formList] = await Promise.all([
-      orgApi<MenuGroupRow[]>('/iam/menu-groups'),
-      orgApi<FormOption[]>('/forms').catch(() => [] as FormOption[]),
+      orgApi<MenuGroupRow[]>('/iam/menu-groups', { organizationId }),
+      orgApi<FormOption[]>('/forms', { organizationId }).catch(() => [] as FormOption[]),
     ]);
     setGroups(
       menuGroups.map((g) => ({
@@ -107,30 +159,56 @@ export function MenuBuilderPage() {
   }, []);
 
   useEffect(() => {
-    if (!currentOrg) return;
-    void load().catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
-  }, [currentOrg?.id, load]);
+    if (!selectedProjectId) return;
+    void load(selectedProjectId).catch((e) =>
+      setError(e instanceof Error ? e.message : 'Failed to load'),
+    );
+  }, [selectedProjectId, load]);
+
+  function onSelectProject(id: string) {
+    setSelectedProjectId(id);
+    setEditing(null);
+    setSubmenuDraft((d) => ({ ...d, parentMainId: '', formId: '' }));
+    setMessage(null);
+    setError(null);
+  }
+
+  async function afterMutation() {
+    if (!selectedProjectId) return;
+    await load(selectedProjectId);
+    if (selectedProjectId === currentOrg?.id) {
+      await refreshSidebar();
+    }
+    await refreshProjectSidebars();
+  }
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
+    if (!selectedProjectId) {
+      setError('Select a project for this menu');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       if (mode === 'main') {
         await orgApi('/iam/menu-groups', {
           method: 'POST',
+          organizationId: selectedProjectId,
           body: JSON.stringify({
             name: mainDraft.name.trim(),
             sortOrder: Number(mainDraft.sortOrder) || 0,
             isActive: mainDraft.isActive,
+            organizationId: selectedProjectId,
           }),
         });
-        setMessage('Main menu created');
+        setMessage(`Main menu created for ${selectedProject?.name ?? 'project'}`);
         setMainDraft(emptyMainDraft());
       } else {
         const formId = submenuDraft.formId || undefined;
         await orgApi('/iam/menus', {
           method: 'POST',
+          organizationId: selectedProjectId,
           body: JSON.stringify({
             label: submenuDraft.label.trim(),
             groupId: submenuDraft.parentMainId || undefined,
@@ -139,17 +217,17 @@ export function MenuBuilderPage() {
             icon: submenuDraft.icon.trim() || undefined,
             sortOrder: Number(submenuDraft.sortOrder) || 0,
             isActive: submenuDraft.isActive,
+            organizationId: selectedProjectId,
           }),
         });
         setMessage(
           submenuDraft.parentMainId
-            ? 'Submenu created under main menu'
-            : 'Outer top-level item created',
+            ? `Submenu created under main menu (${selectedProject?.name ?? 'project'})`
+            : `Outer top-level item created (${selectedProject?.name ?? 'project'})`,
         );
         setSubmenuDraft(emptySubmenuDraft());
       }
-      await load();
-      await refreshSidebar();
+      await afterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Create failed');
     } finally {
@@ -184,17 +262,19 @@ export function MenuBuilderPage() {
 
   async function onSaveEdit(e: FormEvent) {
     e.preventDefault();
-    if (!editing) return;
+    if (!editing || !selectedProjectId) return;
     setBusy(true);
     setError(null);
     try {
       if (editing.kind === 'main') {
         await orgApi(`/iam/menu-groups/${editing.id}`, {
           method: 'PATCH',
+          organizationId: selectedProjectId,
           body: JSON.stringify({
             name: editMain.name.trim(),
             sortOrder: Number(editMain.sortOrder) || 0,
             isActive: editMain.isActive,
+            organizationId: selectedProjectId,
           }),
         });
         setMessage('Main menu updated');
@@ -202,6 +282,7 @@ export function MenuBuilderPage() {
         const formId = editSubmenu.formId || null;
         await orgApi(`/iam/menus/${editing.id}`, {
           method: 'PATCH',
+          organizationId: selectedProjectId,
           body: JSON.stringify({
             label: editSubmenu.label.trim(),
             groupId: editSubmenu.parentMainId || null,
@@ -210,13 +291,13 @@ export function MenuBuilderPage() {
             icon: editSubmenu.icon.trim() || null,
             sortOrder: Number(editSubmenu.sortOrder) || 0,
             isActive: editSubmenu.isActive,
+            organizationId: selectedProjectId,
           }),
         });
         setMessage('Submenu updated');
       }
       setEditing(null);
-      await load();
-      await refreshSidebar();
+      await afterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed');
     } finally {
@@ -226,14 +307,17 @@ export function MenuBuilderPage() {
 
   async function onDeleteMain(groupId: string) {
     if (!window.confirm('Delete this main menu? Submenus must be removed first.')) return;
+    if (!selectedProjectId) return;
     setBusy(true);
     setError(null);
     try {
-      await orgApi(`/iam/menu-groups/${groupId}`, { method: 'DELETE' });
+      await orgApi(`/iam/menu-groups/${groupId}`, {
+        method: 'DELETE',
+        organizationId: selectedProjectId,
+      });
       setMessage('Main menu deleted');
       if (editing?.kind === 'main' && editing.id === groupId) setEditing(null);
-      await load();
-      await refreshSidebar();
+      await afterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
@@ -243,14 +327,17 @@ export function MenuBuilderPage() {
 
   async function onDeleteSubmenu(menuId: string) {
     if (!window.confirm('Delete this menu item?')) return;
+    if (!selectedProjectId) return;
     setBusy(true);
     setError(null);
     try {
-      await orgApi(`/iam/menus/${menuId}`, { method: 'DELETE' });
+      await orgApi(`/iam/menus/${menuId}`, {
+        method: 'DELETE',
+        organizationId: selectedProjectId,
+      });
       setMessage('Menu deleted');
       if (editing?.kind === 'submenu' && editing.id === menuId) setEditing(null);
-      await load();
-      await refreshSidebar();
+      await afterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
@@ -259,14 +346,18 @@ export function MenuBuilderPage() {
   }
 
   async function moveSubmenu(menu: MenuRow, delta: number) {
+    if (!selectedProjectId) return;
     setBusy(true);
     try {
       await orgApi(`/iam/menus/${menu.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ sortOrder: (menu.sortOrder ?? 0) + delta }),
+        organizationId: selectedProjectId,
+        body: JSON.stringify({
+          sortOrder: (menu.sortOrder ?? 0) + delta,
+          organizationId: selectedProjectId,
+        }),
       });
-      await load();
-      await refreshSidebar();
+      await afterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Reorder failed');
     } finally {
@@ -275,14 +366,18 @@ export function MenuBuilderPage() {
   }
 
   async function moveMain(group: MenuGroupRow, delta: number) {
+    if (!selectedProjectId) return;
     setBusy(true);
     try {
       await orgApi(`/iam/menu-groups/${group.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ sortOrder: (group.sortOrder ?? 0) + delta }),
+        organizationId: selectedProjectId,
+        body: JSON.stringify({
+          sortOrder: (group.sortOrder ?? 0) + delta,
+          organizationId: selectedProjectId,
+        }),
       });
-      await load();
-      await refreshSidebar();
+      await afterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Reorder failed');
     } finally {
@@ -293,6 +388,12 @@ export function MenuBuilderPage() {
   function renderSubmenuEditForm() {
     return (
       <form className="auth-form compact" onSubmit={(e) => void onSaveEdit(e)}>
+        <ProjectField
+          value={selectedProjectId}
+          onChange={onSelectProject}
+          options={projectOptions}
+          disabled
+        />
         <div className="row-2">
           <label>
             Label
@@ -430,7 +531,7 @@ export function MenuBuilderPage() {
     <div>
       <PageHeader
         title="Menu Builder"
-        description="Create main menus (sidebar sections) and submenus that nest under them — or leave parent empty for an outer top-level item."
+        description="Create main menus (sidebar sections) and submenus for a specific project — nested under that project in the DMS sidebar."
       />
 
       {error && <div className="alert error">{error}</div>}
@@ -463,6 +564,11 @@ export function MenuBuilderPage() {
           </div>
 
           <form className="auth-form compact" onSubmit={(e) => void onCreate(e)}>
+            <ProjectField
+              value={selectedProjectId}
+              onChange={onSelectProject}
+              options={projectOptions}
+            />
             {mode === 'main' ? (
               <>
                 <div className="row-2">
@@ -493,10 +599,10 @@ export function MenuBuilderPage() {
                   Active
                 </label>
                 <p className="muted tiny">
-                  A main menu is a top-level sidebar section (like <strong>Workspace</strong>). Add
+                  A main menu is a top-level sidebar section under the selected project. Add
                   submenus under it next.
                 </p>
-                <button className="btn primary" type="submit" disabled={busy}>
+                <button className="btn primary" type="submit" disabled={busy || !selectedProjectId}>
                   Create main menu
                 </button>
               </>
@@ -576,10 +682,10 @@ export function MenuBuilderPage() {
                   </label>
                 </div>
                 <p className="muted tiny">
-                  Choose a parent to nest under that main menu. Leave parent empty to show as an
-                  outer top-level item (not inside any section).
+                  Parent main menus listed are only for the selected project. Leave parent empty
+                  for an outer top-level item.
                 </p>
-                <button className="btn primary" type="submit" disabled={busy}>
+                <button className="btn primary" type="submit" disabled={busy || !selectedProjectId}>
                   Create submenu
                 </button>
               </>
@@ -590,16 +696,27 @@ export function MenuBuilderPage() {
 
       <section className="section-card">
         <div className="section-card-head">
-          <h2>Current menus</h2>
+          <h2>
+            Current menus
+            {selectedProject ? (
+              <span className="muted tiny"> · {selectedProject.name}</span>
+            ) : null}
+          </h2>
         </div>
         <div className="section-card-body">
-          {groups.length === 0 && <p className="muted tiny">No menus yet.</p>}
+          {groups.length === 0 && <p className="muted tiny">No menus yet for this project.</p>}
           {groups.map((group) => (
             <div key={group.id} className="menu-builder-group">
               {group.isOuter ? (
                 <h3>Outer top-level items</h3>
               ) : editing?.kind === 'main' && editing.id === group.id ? (
                 <form className="auth-form compact" onSubmit={(e) => void onSaveEdit(e)}>
+                  <ProjectField
+                    value={selectedProjectId}
+                    onChange={onSelectProject}
+                    options={projectOptions}
+                    disabled
+                  />
                   <div className="row-2">
                     <label>
                       Name

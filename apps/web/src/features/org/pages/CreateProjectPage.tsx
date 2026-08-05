@@ -1,12 +1,11 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import type { ProjectStatus } from '@dms/shared';
-import { suggestDatabaseName } from '@dms/shared';
+import { PROJECT_THEME_OPTIONS, suggestDatabaseName } from '@dms/shared';
 import { useAuth } from '../../auth/auth-context';
 import { useOrg, type CreateProjectInput } from '../org-context';
 
 const STATUSES: ProjectStatus[] = ['ACTIVE', 'DRAFT', 'ARCHIVED', 'SUSPENDED'];
-const THEMES = ['default', 'ocean', 'forest', 'slate', 'sunrise'];
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'JPY', 'AUD'];
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -249,9 +248,9 @@ export function CreateProjectPage() {
                   value={form.theme ?? 'default'}
                   onChange={(e) => setField('theme', e.target.value)}
                 >
-                  {THEMES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  {PROJECT_THEME_OPTIONS.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label} — {t.description}
                     </option>
                   ))}
                 </select>

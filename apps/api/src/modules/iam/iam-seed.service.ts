@@ -154,7 +154,7 @@ export class IamSeedService {
         { label: 'Forms', path: '/app/forms', icon: 'form', groupId: configGroup.id, permissionCode: 'menu.forms', sortOrder: 2 },
         { label: 'Menus', path: '/app/menus', icon: 'menu', groupId: configGroup.id, permissionCode: 'menu.menus', sortOrder: 3 },
         { label: 'Grids', path: '/app/grids', icon: 'table', groupId: configGroup.id, permissionCode: 'menu.grids', sortOrder: 4 },
-        { label: 'Reports', path: '/app/dashboards', icon: 'layout', groupId: configGroup.id, permissionCode: 'menu.dashboards', sortOrder: 5 },
+        { label: 'Dashboard Builder', path: '/app/dashboards', icon: 'layout', groupId: configGroup.id, permissionCode: 'menu.dashboards', sortOrder: 5 },
         // Workspace (nested until later product focus)
         { label: 'Sessions', path: '/app/sessions', icon: 'shield', groupId: mainGroup.id, permissionCode: 'menu.sessions', sortOrder: 2 },
         { label: 'Chat', path: '/app/chat', icon: 'chat', groupId: mainGroup.id, permissionCode: 'menu.chat', sortOrder: 3 },
@@ -354,7 +354,7 @@ export class IamSeedService {
       { path: '/app/forms', label: 'Forms', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 2 },
       { path: '/app/menus', label: 'Menus', icon: 'menu', permissionCode: 'menu.menus', groupId: configGroup.id, sortOrder: 3 },
       { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: configGroup.id, sortOrder: 4 },
-      { path: '/app/dashboards', label: 'Reports', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, sortOrder: 5 },
+      { path: '/app/dashboards', label: 'Dashboard Builder', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, sortOrder: 5 },
       { path: '/app/sessions', label: 'Sessions', icon: 'shield', permissionCode: 'menu.sessions', groupId: mainGroup.id, sortOrder: 2 },
       { path: '/app/chat', label: 'Chat', icon: 'chat', permissionCode: 'menu.chat', groupId: mainGroup.id, sortOrder: 3 },
       { path: '/app/calls', label: 'Calls history', icon: 'phone', permissionCode: 'menu.calls', groupId: mainGroup.id, sortOrder: 4 },

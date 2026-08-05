@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { MessageResponse, PublicProjectLoginDto } from '@dms/shared';
-import { projectDashboardPath } from '@dms/shared';
+import { getProjectThemePreset, projectDashboardPath, resolveProjectThemeId } from '@dms/shared';
 import { api, setOrganizationId } from '../../../lib/api';
+import { useDocumentTheme } from '../../../lib/project-theme';
 import { useAuth } from '../auth-context';
 
 export function ProjectLoginPage() {
@@ -51,8 +52,12 @@ export function ProjectLoginPage() {
     return { name, initial, config };
   }, [payload]);
 
+  const themeId = resolveProjectThemeId(brand.config?.theme);
+  const themePreset = getProjectThemePreset(themeId);
+  useDocumentTheme(themeId, brand.config?.primaryColor);
+
   const visualStyle = useMemo((): CSSProperties => {
-    const primary = brand.config?.primaryColor || '#0f766e';
+    const primary = brand.config?.primaryColor || themePreset.primaryColor;
     const bg = brand.config?.backgroundUrl;
     const base: CSSProperties = {
       ['--project-primary' as string]: primary,
@@ -67,9 +72,9 @@ export function ProjectLoginPage() {
     }
     return {
       ...base,
-      background: `linear-gradient(150deg, color-mix(in srgb, ${primary} 38%, transparent) 0%, transparent 52%), linear-gradient(210deg, #0b1220 0%, #111827 58%, #0f172a 100%)`,
+      background: `linear-gradient(150deg, color-mix(in srgb, ${primary} 38%, transparent) 0%, transparent 52%), linear-gradient(210deg, var(--bg-sidebar) 0%, color-mix(in srgb, var(--bg-sidebar) 85%, #111827) 58%, color-mix(in srgb, var(--bg-sidebar) 70%, #0f172a) 100%)`,
     };
-  }, [brand.config?.backgroundUrl, brand.config?.primaryColor]);
+  }, [brand.config?.backgroundUrl, brand.config?.primaryColor, themePreset.primaryColor]);
 
   async function onPasswordSubmit(e: FormEvent) {
     e.preventDefault();
@@ -132,15 +137,14 @@ export function ProjectLoginPage() {
   }
 
   const { config } = payload;
-  const primaryBtnStyle = config.primaryColor
-    ? ({ background: config.primaryColor, borderColor: config.primaryColor } as CSSProperties)
-    : undefined;
+  const primary = config.primaryColor || themePreset.primaryColor;
+  const primaryBtnStyle = { background: primary, borderColor: primary } as CSSProperties;
   const description = config.description?.trim() || null;
   const welcome = config.welcomeText?.trim() || 'Sign in to continue';
-  const badgeStyle = config.primaryColor ? { background: config.primaryColor } : undefined;
+  const badgeStyle = { background: `linear-gradient(145deg, var(--brand-badge-from), ${primary})` };
 
   return (
-    <div className="project-login-page" style={visualStyle}>
+    <div className="project-login-page" data-theme={themeId} style={visualStyle}>
       <div className="project-login-shell">
         <aside className="project-login-brand-pane" aria-label="Project branding">
           <div className="project-login-brand-stack">

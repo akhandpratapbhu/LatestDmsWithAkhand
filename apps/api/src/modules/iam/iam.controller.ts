@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -11,7 +12,13 @@ import {
 } from '@nestjs/common';
 import { OrgRole, PermissionType } from '@prisma/client';
 import { CurrentUser, JwtPayloadUser } from '../auth/decorators/current-user.decorator';
-import { CurrentOrg, OrgContext, OrgGuard, RequireOrgRoles } from '../organizations/org.guard';
+import {
+  CurrentOrg,
+  OrgContext,
+  OrgGuard,
+  RequireOrgRoles,
+  SkipOrg,
+} from '../organizations/org.guard';
 import { IamService } from './iam.service';
 import { LoginPageConfigService } from './login-page-config.service';
 import {
@@ -34,9 +41,26 @@ export class IamController {
     private readonly loginPage: LoginPageConfigService,
   ) {}
 
+  /** Resolve target org from body.organizationId when provided (must match guard org). */
+  private menuOrgId(org: OrgContext, bodyOrganizationId?: string): string {
+    if (bodyOrganizationId && bodyOrganizationId !== org.organizationId) {
+      throw new BadRequestException(
+        'organizationId must match the X-Organization-Id header (selected project)',
+      );
+    }
+    return org.organizationId;
+  }
+
   @Get('sidebar')
   sidebar(@CurrentOrg() org: OrgContext, @CurrentUser() user: JwtPayloadUser) {
     return this.iam.getSidebar(org.organizationId, user.userId);
+  }
+
+  /** Menu trees for every project the user belongs to (platform DMS sidebar). */
+  @Get('project-sidebars')
+  @SkipOrg()
+  projectSidebars(@CurrentUser() user: JwtPayloadUser) {
+    return this.iam.listProjectSidebars(user.userId);
   }
 
   @Get('permissions/me')
@@ -89,14 +113,24 @@ export class IamController {
 
   @Get('menu-groups')
   @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
-  listMenuGroups(@CurrentOrg() org: OrgContext) {
+  listMenuGroups(
+    @CurrentOrg() org: OrgContext,
+    @Query('organizationId') organizationId?: string,
+  ) {
+    if (organizationId && organizationId !== org.organizationId) {
+      throw new BadRequestException(
+        'organizationId query must match X-Organization-Id when both are sent',
+      );
+    }
     return this.iam.listMenuGroups(org.organizationId);
   }
 
   @Post('menu-groups')
   @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
   createMenuGroup(@CurrentOrg() org: OrgContext, @Body() dto: CreateMenuGroupDto) {
-    return this.iam.createMenuGroup(org.organizationId, dto);
+    const organizationId = this.menuOrgId(org, dto.organizationId);
+    const { organizationId: _ignored, ...data } = dto;
+    return this.iam.createMenuGroup(organizationId, data);
   }
 
   @Patch('menu-groups/:id')
@@ -106,7 +140,9 @@ export class IamController {
     @Param('id') id: string,
     @Body() dto: UpdateMenuGroupDto,
   ) {
-    return this.iam.updateMenuGroup(org.organizationId, id, dto);
+    const organizationId = this.menuOrgId(org, dto.organizationId);
+    const { organizationId: _ignored, ...data } = dto;
+    return this.iam.updateMenuGroup(organizationId, id, data);
   }
 
   @Delete('menu-groups/:id')
@@ -118,7 +154,9 @@ export class IamController {
   @Post('menus')
   @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
   createMenu(@CurrentOrg() org: OrgContext, @Body() dto: CreateMenuDto) {
-    return this.iam.createMenu(org.organizationId, dto);
+    const organizationId = this.menuOrgId(org, dto.organizationId);
+    const { organizationId: _ignored, ...data } = dto;
+    return this.iam.createMenu(organizationId, data);
   }
 
   @Patch('menus/:id')
@@ -128,7 +166,9 @@ export class IamController {
     @Param('id') id: string,
     @Body() dto: UpdateMenuDto,
   ) {
-    return this.iam.updateMenu(org.organizationId, id, dto);
+    const organizationId = this.menuOrgId(org, dto.organizationId);
+    const { organizationId: _ignored, ...data } = dto;
+    return this.iam.updateMenu(organizationId, id, data);
   }
 
   @Delete('menus/:id')

@@ -97,6 +97,11 @@ export class CreateMenuGroupDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /** Target project; when set must match X-Organization-Id (or supplies it). */
+  @IsOptional()
+  @IsString()
+  organizationId?: string;
 }
 
 export class UpdateMenuGroupDto {
@@ -112,6 +117,10 @@ export class UpdateMenuGroupDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  organizationId?: string;
 }
 
 export class CreateMenuDto {
@@ -152,6 +161,11 @@ export class CreateMenuDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /** Target project; when set must match X-Organization-Id (or supplies it). */
+  @IsOptional()
+  @IsString()
+  organizationId?: string;
 }
 
 export class UpdateMenuDto {
@@ -191,6 +205,10 @@ export class UpdateMenuDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  organizationId?: string;
 }
 
 export class AssignMemberRolesDto {

@@ -83,6 +83,7 @@ export async function api<T>(
   options: RequestInit = {},
   auth = true,
   withOrg = false,
+  organizationIdOverride?: string | null,
 ): Promise<T> {
   const headers = new Headers(options.headers);
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
@@ -92,8 +93,11 @@ export async function api<T>(
   if (auth && accessToken) {
     headers.set('Authorization', `Bearer ${accessToken}`);
   }
-  if (withOrg && organizationId) {
-    headers.set('X-Organization-Id', organizationId);
+  if (withOrg) {
+    const orgId = organizationIdOverride || organizationId;
+    if (orgId) {
+      headers.set('X-Organization-Id', orgId);
+    }
   }
 
   let res = await fetch(`${API_URL}${path}`, { ...options, headers });
@@ -117,6 +121,12 @@ export async function api<T>(
   return json.data as T;
 }
 
-export function orgApi<T>(path: string, options: RequestInit = {}): Promise<T> {
-  return api<T>(path, options, true, true);
+export type OrgApiOptions = RequestInit & {
+  /** Override X-Organization-Id for this request (e.g. Menu Builder project picker). */
+  organizationId?: string;
+};
+
+export function orgApi<T>(path: string, options: OrgApiOptions = {}): Promise<T> {
+  const { organizationId: orgOverride, ...fetchOpts } = options;
+  return api<T>(path, fetchOpts, true, true, orgOverride);
 }

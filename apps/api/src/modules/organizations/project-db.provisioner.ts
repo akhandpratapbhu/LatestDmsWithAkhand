@@ -255,11 +255,13 @@ export class ProjectDbProvisioner {
     await this.projectIamSeed.seedOrganization(client, organizationId, member.id);
     const org = await this.prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { name: true, description: true },
+      select: { name: true, description: true, theme: true, logoUrl: true },
     });
     await this.projectIamSeed.ensureLoginPageConfig(client, organizationId, {
       companyName: org?.name ?? '',
       description: org?.description,
+      theme: org?.theme ?? 'default',
+      logoUrl: org?.logoUrl,
     });
   }
 }

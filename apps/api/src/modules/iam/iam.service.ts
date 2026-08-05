@@ -874,6 +874,59 @@ export class IamService {
     };
   }
 
+  private parseEnabledFeatures(raw: unknown): string[] {
+    if (Array.isArray(raw)) {
+      return raw.filter((x): x is string => typeof x === 'string');
+    }
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) {
+          return parsed.filter((x): x is string => typeof x === 'string');
+        }
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  /** Sidebar menu trees for all projects the user is an active member of. */
+  async listProjectSidebars(userId: string): Promise<{
+    projects: Array<{
+      organizationId: string;
+      name: string;
+      slug: string;
+      enabledFeatures: string[];
+      groups: SidebarGroupDto[];
+    }>;
+  }> {
+    const memberships = await this.prisma.organizationMember.findMany({
+      where: {
+        userId,
+        status: 'ACTIVE',
+        organization: { isActive: true },
+      },
+      include: { organization: true },
+      orderBy: { organization: { name: 'asc' } },
+    });
+
+    const projects = await Promise.all(
+      memberships.map(async (m) => {
+        const sidebar = await this.getSidebar(m.organizationId, userId);
+        return {
+          organizationId: m.organizationId,
+          name: m.organization.name,
+          slug: m.organization.slug,
+          enabledFeatures: this.parseEnabledFeatures(m.organization.enabledFeatures),
+          groups: sidebar.groups,
+        };
+      }),
+    );
+
+    return { projects };
+  }
+
   private async ensureRole(db: TenantDb, organizationId: string, roleId: string) {
     const role = await db.iamRole.findFirst({ where: { id: roleId, organizationId } });
     if (!role) throw new NotFoundException('Role not found');
