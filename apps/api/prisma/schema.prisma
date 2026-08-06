@@ -1,3 +1,8 @@
+// Platform database schema (DATABASE_URL / typically `configure_system`).
+// Holds platform auth, Organization (project) metadata, membership to open projects,
+// enabledFeatures, and still-shared business tables (Forms/Grids/Chat/…).
+// Project-scoped IAM / users / LoginPageConfig live in schema-project.prisma (per-project DBs).
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -27,6 +32,88 @@ enum UserAccountStatus {
   DEACTIVATED
 }
 
+enum PermissionType {
+  SCREEN
+  API
+  DATA
+  MENU
+}
+
+enum WidgetType {
+  CHART
+  CARD
+  TABLE
+  TEXT
+}
+
+enum FormLayoutType {
+  STACK
+  GRID
+  TABS
+}
+
+enum FormStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum ControlType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  EMAIL
+  SELECT
+  MULTI_SELECT
+  CHECKBOX
+  DATE
+  FILE
+}
+
+enum ValidationRuleType {
+  REQUIRED
+  MIN
+  MAX
+  MIN_LENGTH
+  MAX_LENGTH
+  PATTERN
+  EMAIL
+  CUSTOM
+}
+
+enum GridColumnType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  ENUM
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  VIEW
+  EXPORT
+  IMPORT
+  OTHER
+}
+
 model User {
   id              String            @id @default(uuid())
   email           String            @unique
@@ -38,10 +125,17 @@ model User {
   emailVerified   Boolean           @default(false)
   emailVerifiedAt DateTime?
   isActive        Boolean           @default(true)
+  /// Platform-wide admin: can create projects (POST /organizations). Not an org-level role.
+  isPlatformAdmin Boolean           @default(false)
+  /// Home/primary organization set at create time (org-scoped create/invite).
+  /// Nullable for platform admins, self-register, and multi-org accounts.
+  /// Multi-org access still uses OrganizationMember — do not remove that table.
+  organizationId  String?
   status          UserAccountStatus @default(ACTIVE)
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
+  organization        Organization?            @relation("UserHomeOrg", fields: [organizationId], references: [id], onDelete: SetNull)
   sessions            Session[]
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
@@ -50,7 +144,27 @@ model User {
   ownedOrganizations  Organization[]           @relation("OrgOwner")
   invitesSent         UserInvite[]             @relation("InviteSender")
   invitesReceived     UserInvite[]             @relation("InviteReceiver")
+  formSubmissions     FormSubmission[]
+  gridSavedViews      GridSavedView[]
+  notifications       Notification[]
+  notificationPrefs   NotificationPreference[]
+  pushDevices         PushDevice[]
+  savedSearches       SavedSearch[]
+  auditLogs           AuditLog[]
+  activityEvents      ActivityEvent[]
+  loginHistory        LoginHistory[]
+  chatMembers         ChatMember[]
+  chatMessages        ChatMessage[]           @relation("ChatMessageSender")
+  chatReceipts        ChatReceipt[]
+  chatRoomsCreated    ChatRoom[]              @relation("ChatRoomCreator")
+  callsMade           CallSession[]           @relation("CallCaller")
+  callsReceived       CallSession[]           @relation("CallCallee")
+  callParticipations  CallParticipant[]
+  linkedCustomers     Customer[]              @relation("CustomerLinkedUser")
+  linkedDealers       Dealer[]                @relation("DealerLinkedUser")
+  linkedEmployees     Employee[]              @relation("EmployeeLinkedUser")
 
+  @@index([organizationId])
   @@map("users")
 }
 
@@ -118,16 +232,35 @@ model EmailVerificationToken {
 }
 
 model Organization {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  code      String?
-  isActive  Boolean  @default(true)
-  ownerId   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(uuid())
+  name             String
+  slug             String   @unique
+  code             String?
+  description      String?
+  logoUrl          String?
+  version          String   @default("1.0.0")
+  /// Logical Postgres database name for this project (e.g. hospital_management_db)
+  databaseName     String?
+  isActive         Boolean  @default(true)
+  /// Product-facing project lifecycle: ACTIVE | DRAFT | ARCHIVED | SUSPENDED
+  status           String   @default("ACTIVE")
+  theme            String   @default("default")
+  currency         String   @default("USD")
+  language         String   @default("en")
+  timezone         String   @default("UTC")
+  subdomain        String?  @unique
+  /// Local/dev: plain connection string after CREATE DATABASE attempt. Encrypt in Phase 2b+.
+  connectionString String?
+  /// Installed feature keys (JSON string array). Default: core + free login-page only.
+  enabledFeatures  Json     @default("[\"dashboard\",\"users\",\"roles\",\"login-page\"]")
+  /// Subscribed / admin-granted premium feature keys (JSON string array).
+  featureSubscriptions Json  @default("[]")
+  ownerId          String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   owner         User                 @relation("OrgOwner", fields: [ownerId], references: [id])
+  homeUsers     User[]               @relation("UserHomeOrg")
   members       OrganizationMember[]
   branches      Branch[]
   departments   Department[]
@@ -136,8 +269,31 @@ model Organization {
   costCenters   CostCenter[]
   passwordPolicy PasswordPolicy?
   invites       UserInvite[]
+  iamRoles      IamRole[]
+  permissions   Permission[]
+  menuGroups    MenuGroup[]
+  menus         Menu[]
+  dashboards    Dashboard[]
+  landingPages  LandingPage[]
+  dynamicForms  DynamicForm[]
+  dynamicGrids  DynamicGrid[]
+  notifications Notification[]
+  savedSearches SavedSearch[]
+  auditLogs     AuditLog[]
+  activityEvents ActivityEvent[]
+  customers     Customer[]
+  dealers       Dealer[]
+  employees     Employee[]
+  vendors       Vendor[]
+  vehicles      Vehicle[]
+  parts         Part[]
+  products      Product[]
+  warehouses    Warehouse[]
+  chatRooms     ChatRoom[]
+  callSessions  CallSession[]
 
   @@index([ownerId])
+  @@index([status])
   @@map("organizations")
 }
 
@@ -266,6 +422,7 @@ model OrganizationMember {
   designation  Designation? @relation(fields: [designationId], references: [id], onDelete: SetNull)
   team         Team?        @relation(fields: [teamId], references: [id], onDelete: SetNull)
   costCenter   CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  memberRoles  MemberRole[]
 
   @@unique([organizationId, userId])
   @@index([userId])
@@ -312,4 +469,904 @@ model PasswordPolicy {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("password_policies")
+}
+
+model Permission {
+  id             String         @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  description    String?
+  type           PermissionType
+  resource       String?
+  action         String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rolePermissions RolePermission[]
+  menus          Menu[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, type])
+  @@map("permissions")
+}
+
+model IamRole {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  code           String
+  description    String?
+  isSystem       Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rolePermissions RolePermission[]
+  roleMenus       RoleMenu[]
+  memberRoles     MemberRole[]
+  dashboards      Dashboard[]
+  landingPages    LandingPage[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("iam_roles")
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String
+  permissionId String
+
+  role       IamRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model MemberRole {
+  id         String @id @default(uuid())
+  memberId   String
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  member OrganizationMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  role   IamRole            @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, roleId])
+  @@map("member_roles")
+}
+
+model MenuGroup {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  code           String
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  /// When true, omit from Identity & Access permissions matrix (still in sidebar for admins).
+  excludeFromPermissions Boolean @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  menus        Menu[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("menu_groups")
+}
+
+model Menu {
+  id             String   @id @default(uuid())
+  organizationId String
+  groupId        String?
+  parentId       String?
+  label          String
+  path           String?
+  icon           String?
+  /// When set, sidebar item opens the form records grid at /app/data/:formId
+  formId         String?
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  permissionId   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  group        MenuGroup?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  parent       Menu?        @relation("MenuTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Menu[]       @relation("MenuTree")
+  permission   Permission?  @relation(fields: [permissionId], references: [id], onDelete: SetNull)
+  roleMenus    RoleMenu[]
+
+  @@index([organizationId])
+  @@index([groupId])
+  @@index([formId])
+  @@map("menus")
+}
+
+model RoleMenu {
+  id     String @id @default(uuid())
+  roleId String
+  menuId String
+
+  role IamRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  menu Menu    @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, menuId])
+  @@map("role_menus")
+}
+
+model Dashboard {
+  id             String   @id @default(uuid())
+  organizationId String
+  roleId         String?
+  name           String
+  slug           String
+  description    String?
+  isDefault      Boolean  @default(false)
+  isLanding      Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         IamRole?     @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  widgets      Widget[]
+  landingPages LandingPage[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([roleId])
+  @@map("dashboards")
+}
+
+model Widget {
+  id          String     @id @default(uuid())
+  dashboardId String
+  type        WidgetType
+  title       String
+  config      Json       @default("{}")
+  sortOrder   Int        @default(0)
+  posX        Int        @default(0)
+  posY        Int        @default(0)
+  width       Int        @default(4)
+  height      Int        @default(2)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@index([dashboardId])
+  @@map("widgets")
+}
+
+model LandingPage {
+  id             String   @id @default(uuid())
+  organizationId String
+  roleId         String
+  dashboardId    String
+  path           String   @default("/app")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         IamRole      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  dashboard    Dashboard    @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, roleId])
+  @@index([organizationId])
+  @@map("landing_pages")
+}
+
+model DynamicForm {
+  id             String         @id @default(uuid())
+  organizationId String
+  name           String
+  code           String
+  description    String?
+  layoutType     FormLayoutType @default(TABS)
+  layoutConfig   Json           @default("{}")
+  status         FormStatus     @default(DRAFT)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tabs         FormTab[]
+  sections     FormSection[]
+  submissions  FormSubmission[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("dynamic_forms")
+}
+
+model FormTab {
+  id        String   @id @default(uuid())
+  formId    String
+  name      String
+  code      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  form     DynamicForm  @relation(fields: [formId], references: [id], onDelete: Cascade)
+  sections FormSection[]
+
+  @@unique([formId, code])
+  @@index([formId])
+  @@map("form_tabs")
+}
+
+model FormSection {
+  id          String   @id @default(uuid())
+  formId      String
+  tabId       String?
+  name        String
+  code        String
+  columns     Int      @default(2)
+  sortOrder   Int      @default(0)
+  collapsible Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  form     DynamicForm   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  tab      FormTab?      @relation(fields: [tabId], references: [id], onDelete: SetNull)
+  controls FormControl[]
+
+  @@unique([formId, code])
+  @@index([formId])
+  @@index([tabId])
+  @@map("form_sections")
+}
+
+model FormControl {
+  id           String      @id @default(uuid())
+  sectionId    String
+  fieldKey     String
+  label        String
+  controlType  ControlType @default(TEXT)
+  placeholder  String?
+  helpText     String?
+  defaultValue String?
+  options      Json        @default("[]")
+  colSpan      Int         @default(1)
+  sortOrder    Int         @default(0)
+  required     Boolean     @default(false)
+  isActive     Boolean     @default(true)
+  config       Json        @default("{}")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  section     FormSection      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  validations FormValidation[]
+
+  @@unique([sectionId, fieldKey])
+  @@index([sectionId])
+  @@map("form_controls")
+}
+
+model FormValidation {
+  id        String             @id @default(uuid())
+  controlId String
+  ruleType  ValidationRuleType
+  value     String?
+  message   String
+  sortOrder Int                @default(0)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  control FormControl @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@index([controlId])
+  @@map("form_validations")
+}
+
+model FormSubmission {
+  id          String   @id @default(uuid())
+  formId      String
+  submittedBy String?
+  data        Json
+  createdAt   DateTime @default(now())
+
+  form DynamicForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  user User?       @relation(fields: [submittedBy], references: [id], onDelete: SetNull)
+
+  @@index([formId])
+  @@map("form_submissions")
+}
+
+model DynamicGrid {
+  id              String   @id @default(uuid())
+  organizationId  String
+  name            String
+  code            String
+  description     String?
+  pageSize        Int      @default(10)
+  enableSort      Boolean  @default(true)
+  enableFilter    Boolean  @default(true)
+  enableExport    Boolean  @default(true)
+  enableImport    Boolean  @default(true)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  columns      GridColumn[]
+  rows         GridRow[]
+  savedViews   GridSavedView[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("dynamic_grids")
+}
+
+model GridColumn {
+  id         String         @id @default(uuid())
+  gridId     String
+  fieldKey   String
+  title      String
+  dataType   GridColumnType @default(TEXT)
+  sortable   Boolean        @default(true)
+  filterable Boolean        @default(true)
+  visible    Boolean        @default(true)
+  width      Int?
+  sortOrder  Int            @default(0)
+  format     String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  grid DynamicGrid @relation(fields: [gridId], references: [id], onDelete: Cascade)
+
+  @@unique([gridId, fieldKey])
+  @@index([gridId])
+  @@map("grid_columns")
+}
+
+model GridRow {
+  id        String   @id @default(uuid())
+  gridId    String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grid DynamicGrid @relation(fields: [gridId], references: [id], onDelete: Cascade)
+
+  @@index([gridId])
+  @@map("grid_rows")
+}
+
+model GridSavedView {
+  id        String   @id @default(uuid())
+  gridId    String
+  userId    String?
+  name      String
+  filters   Json     @default("[]")
+  sorts     Json     @default("[]")
+  columns   Json     @default("[]")
+  isDefault Boolean  @default(false)
+  isShared  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grid DynamicGrid @relation(fields: [gridId], references: [id], onDelete: Cascade)
+  user User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([gridId])
+  @@index([userId])
+  @@map("grid_saved_views")
+}
+
+model Notification {
+  id             String   @id @default(uuid())
+  organizationId String?
+  userId         String
+  title          String
+  body           String
+  type           String   @default("INFO")
+  link           String?
+  data           Json     @default("{}")
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization?          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries   NotificationDelivery[]
+
+  @@index([userId, createdAt])
+  @@index([organizationId])
+  @@map("notifications")
+}
+
+model NotificationDelivery {
+  id             String                      @id @default(uuid())
+  notificationId String
+  channel        NotificationChannel
+  status         NotificationDeliveryStatus  @default(PENDING)
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime                    @default(now())
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@map("notification_deliveries")
+}
+
+model NotificationPreference {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  emailEnabled   Boolean  @default(true)
+  pushEnabled    Boolean  @default(true)
+  inAppEnabled   Boolean  @default(true)
+  mutedTypes     Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+model PushDevice {
+  id         String   @id @default(uuid())
+  userId     String
+  token      String
+  platform   String   @default("web")
+  label      String?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, token])
+  @@index([userId])
+  @@map("push_devices")
+}
+
+model SavedSearch {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  name           String
+  query          String
+  scope          String   @default("ALL")
+  filters        Json     @default("{}")
+  isShared       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@map("saved_searches")
+}
+
+model AuditLog {
+  id             String      @id @default(uuid())
+  organizationId String?
+  userId         String?
+  action         AuditAction
+  resource       String
+  resourceId     String?
+  summary        String?
+  metadata       Json        @default("{}")
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime    @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([resource])
+  @@map("audit_logs")
+}
+
+model ActivityEvent {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String?
+  actorId        String?
+  type           String
+  title          String
+  summary        String?
+  link           String?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@map("activity_events")
+}
+
+model LoginHistory {
+  id            String   @id @default(uuid())
+  userId        String
+  success       Boolean
+  ipAddress     String?
+  userAgent     String?
+  deviceName    String?
+  failureReason String?
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("login_history")
+}
+
+enum ChatRoomType {
+  DIRECT
+  GROUP
+}
+
+enum ChatContactKind {
+  USER
+  CUSTOMER
+  DEALER
+  EMPLOYEE
+}
+
+enum ChatMessageType {
+  TEXT
+  FILE
+  SYSTEM
+}
+
+enum CallType {
+  AUDIO
+  VIDEO
+}
+
+enum CallStatus {
+  RINGING
+  ACTIVE
+  ENDED
+  MISSED
+  REJECTED
+}
+
+enum CallContactKind {
+  CUSTOMER
+  DEALER
+  EMPLOYEE
+}
+
+model Customer {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  email          String?
+  phone          String?
+  company        String?
+  city           String?
+  notes          String?
+  linkedUserId   String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  linkedUser   User?        @relation("CustomerLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("customers")
+}
+
+model Dealer {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  email          String?
+  phone          String?
+  company        String?
+  city           String?
+  region         String?
+  notes          String?
+  linkedUserId   String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  linkedUser   User?        @relation("DealerLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("dealers")
+}
+
+model Employee {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String?
+  designation    String?
+  department     String?
+  linkedUserId   String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  linkedUser   User?        @relation("EmployeeLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("employees")
+}
+
+model Vendor {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  email          String?
+  phone          String?
+  company        String?
+  city           String?
+  contactPerson  String?
+  gstNumber      String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("vendors")
+}
+
+model Vehicle {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  make           String?
+  model          String?
+  year           Int?
+  vin            String?
+  registrationNo String?
+  color          String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("vehicles")
+}
+
+model Part {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  description    String?
+  sku            String?
+  unit           String?
+  price          Decimal? @db.Decimal(12, 2)
+  category       String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("parts")
+}
+
+model Product {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  description    String?
+  sku            String?
+  unit           String?
+  price          Decimal? @db.Decimal(12, 2)
+  category       String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("products")
+}
+
+model Warehouse {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  address        String?
+  city           String?
+  state          String?
+  country        String?
+  phone          String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("warehouses")
+}
+
+model ChatRoom {
+  id             String           @id @default(uuid())
+  organizationId String
+  type           ChatRoomType     @default(DIRECT)
+  name           String?
+  contactKind    ChatContactKind?
+  contactId      String?
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("ChatRoomCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  members      ChatMember[]
+  messages     ChatMessage[]
+  calls        CallSession[]
+
+  @@index([organizationId])
+  @@index([contactKind, contactId])
+  @@map("chat_rooms")
+}
+
+model ChatMember {
+  id         String    @id @default(uuid())
+  roomId     String
+  userId     String
+  lastReadAt DateTime?
+  joinedAt   DateTime  @default(now())
+
+  room ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId])
+  @@map("chat_members")
+}
+
+model ChatMessage {
+  id          String          @id @default(uuid())
+  roomId      String
+  senderId    String
+  body        String?
+  messageType ChatMessageType @default(TEXT)
+  fileUrl     String?
+  fileName    String?
+  fileMime    String?
+  fileSize    Int?
+  createdAt   DateTime        @default(now())
+
+  room     ChatRoom      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender   User          @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receipts ChatReceipt[]
+
+  @@index([roomId, createdAt])
+  @@index([senderId])
+  @@map("chat_messages")
+}
+
+model ChatReceipt {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+  @@map("chat_receipts")
+}
+
+model CallSession {
+  id             String           @id @default(uuid())
+  organizationId String
+  roomId         String?
+  callerId       String
+  calleeUserId   String?
+  contactKind    CallContactKind?
+  contactId      String?
+  callType       CallType
+  status         CallStatus       @default(RINGING)
+  screenShare    Boolean          @default(false)
+  startedAt      DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime         @default(now())
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         ChatRoom?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  caller       User              @relation("CallCaller", fields: [callerId], references: [id], onDelete: Cascade)
+  callee       User?             @relation("CallCallee", fields: [calleeUserId], references: [id], onDelete: SetNull)
+  participants CallParticipant[]
+  recordings   CallRecording[]
+
+  @@index([organizationId, createdAt])
+  @@index([callerId])
+  @@index([calleeUserId])
+  @@map("call_sessions")
+}
+
+model CallParticipant {
+  id       String    @id @default(uuid())
+  callId   String
+  userId   String
+  joinedAt DateTime?
+  leftAt   DateTime?
+
+  call CallSession @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([callId, userId])
+  @@index([userId])
+  @@map("call_participants")
+}
+
+model CallRecording {
+  id          String   @id @default(uuid())
+  callId      String
+  fileUrl     String
+  fileName    String?
+  durationSec Int?
+  createdAt   DateTime @default(now())
+
+  call CallSession @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId])
+  @@map("call_recordings")
+}
+
+/// Singleton Configure System (platform shell) settings.
+/// Row id is always `default`. Stores which Administration menus are enabled.
+model PlatformConfig {
+  id              String   @id @default("default")
+  /// Installed platform-shell feature keys (JSON string array).
+  enabledFeatures Json     @default("[\"projects\",\"platform-features\",\"dashboard\",\"users\",\"roles\",\"forms\",\"grids\",\"reports\",\"chat\",\"notifications\",\"audit\",\"features\",\"menu-builder\",\"activity\",\"sessions\",\"calls\",\"login-page\"]")
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  @@map("platform_config")
 }

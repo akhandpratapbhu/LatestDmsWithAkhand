@@ -16,7 +16,7 @@ export function LoginPage() {
     setLoading(true);
     try {
       await login(email, password, 'Web Browser');
-      navigate('/app');
+      navigate('/app/projects');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -27,7 +27,7 @@ export function LoginPage() {
   return (
     <form className="auth-form" onSubmit={(e) => void onSubmit(e)}>
       <h1>Sign in</h1>
-      <p className="lede">Access your documents with email and password.</p>
+      <p className="lede">Access Configure System with email and password.</p>
 
       {error && <div className="alert error">{error}</div>}
 

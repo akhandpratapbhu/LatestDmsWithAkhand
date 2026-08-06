@@ -22,7 +22,7 @@ concurrency:
 
 env:
   NODE_VERSION: '20'
-  DATABASE_URL: postgresql://dms:dms_secret@localhost:5432/dms?schema=public
+  DATABASE_URL: postgresql://configure:configure_secret@localhost:5432/configure_system?schema=public
   NODE_ENV: test
 
 jobs:
@@ -105,7 +105,7 @@ jobs:
           context: .
           file: apps/api/Dockerfile
           push: false
-          tags: dms-api:ci
+          tags: configure-api:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -115,7 +115,7 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: false
-          tags: dms-web:ci
+          tags: configure-web:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

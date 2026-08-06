@@ -23,6 +23,7 @@ import {
   RequestOtpDto,
   ResetPasswordDto,
   VerifyEmailDto,
+  VerifyForgotPasswordOtpDto,
   VerifyOtpDto,
 } from './dto/auth.dto';
 
@@ -71,6 +72,14 @@ export class AuthController {
   @Post('forgot-password')
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.auth.forgotPassword(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('forgot-password/verify-otp')
+  verifyForgotPasswordOtp(@Body() dto: VerifyForgotPasswordOtpDto) {
+    return this.auth.verifyForgotPasswordOtp(dto);
   }
 
   @Public()

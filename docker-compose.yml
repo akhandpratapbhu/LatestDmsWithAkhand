@@ -1,25 +1,28 @@
 services:
+  # Platform DB: configure_system. Role/user: configure. Container: configure-postgres.
+  # In pgAdmin, create a server named configure_system (host localhost, port 5435,
+  # user configure, password configure_secret, maintenance DB configure_system).
   postgres:
     image: postgres:16-alpine
-    container_name: dms-postgres
+    container_name: configure-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: dms
-      POSTGRES_PASSWORD: dms_secret
-      POSTGRES_DB: dms
+      POSTGRES_USER: configure
+      POSTGRES_PASSWORD: configure_secret
+      POSTGRES_DB: configure_system
     ports:
       - '5435:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U dms -d dms']
+      test: ['CMD-SHELL', 'pg_isready -U configure -d configure_system']
       interval: 5s
       timeout: 5s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: dms-redis
+    container_name: configure-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
     ports:
@@ -34,7 +37,7 @@ services:
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
-    container_name: dms-mailhog
+    container_name: configure-mailhog
     restart: unless-stopped
     ports:
       - '1025:1025'
@@ -44,12 +47,12 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    container_name: dms-api
+    container_name: configure-api
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://dms:dms_secret@postgres:5432/dms?schema=public
+      DATABASE_URL: postgresql://configure:configure_secret@postgres:5432/configure_system?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SMTP_HOST: mailhog
@@ -69,7 +72,7 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    container_name: dms-web
+    container_name: configure-web
     restart: unless-stopped
     environment:
       VITE_API_URL: http://localhost:3000/api/v1

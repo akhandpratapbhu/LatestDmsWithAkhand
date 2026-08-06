@@ -56,6 +56,16 @@ export class ForgotPasswordDto {
   email!: string;
 }
 
+export class VerifyForgotPasswordOtpDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(8)
+  otp!: string;
+}
+
 export class ResetPasswordDto {
   @IsString()
   @MinLength(10)

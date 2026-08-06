@@ -89,7 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await api('/auth/logout', {
         method: 'POST',
         body: JSON.stringify({
-          refreshToken: localStorage.getItem('dms_refresh_token'),
+          refreshToken: localStorage.getItem('configure_refresh_token')
+            ?? localStorage.getItem('dms_refresh_token'),
           allDevices,
         }),
       });

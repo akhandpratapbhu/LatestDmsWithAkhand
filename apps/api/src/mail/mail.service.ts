@@ -14,7 +14,7 @@ export class MailService {
     private readonly logger: AppLogger,
   ) {
     this.enabled = config.get<string>('EMAIL_ENABLED', 'false') === 'true';
-    this.from = config.get<string>('SMTP_FROM', 'DMS <noreply@dms.local>');
+    this.from = config.get<string>('SMTP_FROM', 'Configure System <noreply@configure.local>');
 
     if (this.enabled) {
       this.transporter = nodemailer.createTransport({
@@ -48,6 +48,14 @@ export class MailService {
       to,
       'Your login OTP',
       `<p>Your one-time password is <strong>${otp}</strong>.</p><p>It expires in a few minutes.</p>`,
+    );
+  }
+
+  async sendPasswordResetOtp(to: string, otp: string): Promise<void> {
+    await this.sendMail(
+      to,
+      'Password reset OTP',
+      `<p>Your password reset code is <strong>${otp}</strong>.</p><p>It expires in a few minutes. If you did not request this, you can ignore this email.</p>`,
     );
   }
 

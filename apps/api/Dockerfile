@@ -9,7 +9,7 @@ RUN npm install --workspace=@dms/api --workspace=@dms/shared --include-workspace
 
 FROM node:20-alpine AS build
 WORKDIR /app
-ENV DATABASE_URL="postgresql://dms:dms_secret@localhost:5432/dms?schema=public"
+ENV DATABASE_URL="postgresql://configure:configure_secret@localhost:5432/configure_system?schema=public"
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build -w @dms/shared
