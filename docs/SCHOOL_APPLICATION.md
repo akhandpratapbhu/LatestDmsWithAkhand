@@ -1,6 +1,6 @@
 # School Management Application
 
-Plan and configuration guide for the **School Management** project on the Enterprise Builder / DMS platform (`slug: school-management`, DB: `school_management_db`).
+Plan and configuration guide for the **School Management** project on the Configure System platform (`slug: school-management`, DB: `school_management_db`).
 
 Related: [ENTERPRISE_BUILDER.md](./ENTERPRISE_BUILDER.md) · [HOSPITAL_APPLICATION.md](./HOSPITAL_APPLICATION.md) (same Phase-1 shell pattern)
 

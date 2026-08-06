@@ -113,7 +113,7 @@
   --project-primary: #b45309;
 }
 
-/* Industrial automotive / dealer DMS — charcoal, steel, amber */
+/* Industrial automotive / dealer theme — charcoal, steel, amber */
 [data-theme='dms'] {
   --bg: #eceff3;
   --bg-sidebar: #121417;
@@ -757,6 +757,47 @@ select:focus {
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
+.project-card-wrap {
+  position: relative;
+}
+
+.project-card-wrap.current .project-card {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.project-card-delete {
+  position: absolute;
+  bottom: 0.55rem;
+  right: 0.55rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #64748b;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.project-card-wrap:hover .project-card-delete,
+.project-card-wrap:focus-within .project-card-delete,
+.project-card-delete:focus-visible {
+  opacity: 1;
+}
+
+.project-card-delete:hover,
+.project-card-delete:focus-visible {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+}
+
 .project-card:hover,
 .project-card:focus-visible {
   border-color: #94a3b8;
@@ -945,6 +986,45 @@ select:focus {
 .feature-card .btn {
   margin-top: auto;
   align-self: flex-start;
+}
+
+.feature-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: auto;
+}
+
+.feature-card-actions .btn {
+  margin-top: 0;
+}
+
+.subscribe-page .subscribe-panel {
+  max-width: 32rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.subscribe-plan {
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface, #fff) 92%, var(--accent, #0d9488) 8%);
+}
+
+.subscribe-price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0.65rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.subscribe-price small {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted, #64748b);
 }
 
 .project-action-modal {
@@ -1877,6 +1957,12 @@ label.check {
   margin-bottom: 0.75rem;
 }
 
+.nav-section.admin-nav {
+  padding-bottom: 0.55rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--sidebar-text) 18%, transparent);
+}
+
 .nav-section-label {
   margin: 0 0 0.35rem;
   padding: 0 0.55rem;
@@ -1889,6 +1975,29 @@ label.check {
 
 .nav-projects-home {
   margin-bottom: 0.35rem;
+}
+
+.nav-project-link {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 8px;
+  color: var(--sidebar-text);
+  font-size: 0.84rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.nav-project-link:hover {
+  background: color-mix(in srgb, var(--sidebar-text) 10%, transparent);
+  color: var(--sidebar-text-strong);
+}
+
+.nav-project-link.active {
+  background: color-mix(in srgb, var(--sidebar-text) 14%, transparent);
+  color: var(--sidebar-text-strong);
+  font-weight: 600;
 }
 
 .nav-project-toggle {

@@ -291,7 +291,7 @@ const MAHINDRA_ROLES: RoleDef[] = [
   {
     code: 'DEALER_ADMIN',
     name: 'Dealer Admin',
-    description: 'Full dealer / DMS administration and IAM',
+    description: 'Full dealer administration and IAM',
     isAdmin: true,
   },
   {

@@ -1,6 +1,6 @@
 # Hospital Management Application
 
-Plan and configuration guide for the **Hospital Management** project on the Enterprise Builder / DMS platform (`slug: hospital-management`, DB: `hospital_management_db`).
+Plan and configuration guide for the **Hospital Management** project on the Configure System platform (`slug: hospital-management`, DB: `hospital_management_db`).
 
 Related: [ENTERPRISE_BUILDER.md](./ENTERPRISE_BUILDER.md)
 
@@ -173,7 +173,7 @@ Password for all: **`Password1!`**
 
 ```bash
 # Push project schema (includes appointment tables) to hospital_management_db
-DATABASE_URL="postgresql://dms:dms_secret@localhost:5435/hospital_management_db?schema=public" \
+DATABASE_URL="postgresql://configure:configure_secret@localhost:5435/hospital_management_db?schema=public" \
   npm run prisma:push:project -w @dms/api
 
 npm run prisma:seed:org-roles -w @dms/api              # includes PATIENT role

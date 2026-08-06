@@ -1,6 +1,8 @@
-# Fullcursor DMS
+# Configure System
 
-Monorepo Document Management System — **Phase 0–5** (foundation, auth, org, users, IAM, dashboards).
+Monorepo **Configure System** (project configuration platform) — Phase 0–5 (foundation, auth, org, users, IAM, dashboards).
+
+> Internal npm workspaces still use the `@dms/*` package scope for build stability.
 
 ## Stack
 
@@ -17,7 +19,9 @@ Monorepo Document Management System — **Phase 0–5** (foundation, auth, org, 
 
 ## Quick start
 
-Postgres is mapped to host port **5435** (avoids conflicts with other local Postgres instances).
+Postgres is mapped to host port **5435** (avoids conflicts with other local Postgres instances). Platform database: **`configure_system`**. Role/user: **`configure`** / password **`configure_secret`**. Docker container: **`configure-postgres`**.
+
+**pgAdmin:** delete any old server entry named `dms`. Create a new server named **`configure_system`** — host `localhost`, port `5435`, user `configure`, password `configure_secret`, maintenance DB `configure_system`.
 
 ```bash
 # 1. Env
@@ -25,7 +29,7 @@ cp .env.example .env
 
 # 2. Infrastructure
 npm run docker:up
-# starts postgres (:5435), redis, mailhog
+# starts configure-postgres (:5435), configure-redis, configure-mailhog
 
 # 3. Install
 npm install
@@ -91,7 +95,7 @@ CI/CD setup: [docs/CICD.md](docs/CICD.md)
 
 ## Postman
 
-Import `postman/DMS-Auth.postman_collection.json`. Login requests auto-save tokens into collection variables.
+Import `postman/Configure-System-Auth.postman_collection.json`. Login requests auto-save tokens into collection variables.
 
 ## Coding standards
 
@@ -102,5 +106,3 @@ See [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md).
 ```bash
 docker compose --profile full up --build
 ```
-
-# DMSWithAkhand

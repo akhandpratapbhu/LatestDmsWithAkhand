@@ -43,6 +43,41 @@ export class AuditService {
     });
   }
 
+  /** Platform admin: audit across all projects (+ platform-only rows with null org). */
+  listPlatformAudit(take = 100) {
+    return this.prisma.auditLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(take, 200),
+      include: {
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+        organization: { select: { id: true, name: true, slug: true } },
+      },
+    });
+  }
+
+  /** Platform admin: activity across all projects. */
+  listPlatformTimeline(take = 50) {
+    return this.prisma.activityEvent.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(take, 100),
+      include: {
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+        organization: { select: { id: true, name: true, slug: true } },
+      },
+    });
+  }
+
+  /** Platform admin: recent logins for any user (system monitor). */
+  listPlatformLogins(take = 100) {
+    return this.prisma.loginHistory.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(take, 200),
+      include: {
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
+    });
+  }
+
   recordActivity(input: {
     organizationId: string;
     userId?: string | null;

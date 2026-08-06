@@ -73,8 +73,12 @@ export function IamProvider({ children }: { children: ReactNode }) {
   }, [refreshProjectSidebars]);
 
   const hasPermission = useCallback(
-    (code: string) => !!sidebar?.permissions.includes(code),
-    [sidebar],
+    (code: string) => {
+      // Configure System operators can manage any project's builders/IAM when needed.
+      if (user?.isPlatformAdmin) return true;
+      return !!sidebar?.permissions.includes(code);
+    },
+    [sidebar, user?.isPlatformAdmin],
   );
 
   const value = useMemo(

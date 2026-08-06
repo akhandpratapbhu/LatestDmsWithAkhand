@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PermissionType } from '@prisma/client';
 import { PrismaClient as ProjectPrismaClient } from '@dms/project-client';
+import { DEFAULT_ENABLED_FEATURES, PLATFORM_FEATURE_CATALOG } from '@dms/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProjectDbService } from '../project-db/project-db.service';
 import { IamSeedService } from './iam-seed.service';
@@ -69,6 +70,29 @@ export class IamService {
     } else {
       await this.seed.seedOrganization(organizationId, member.id);
       await this.seed.syncMenuLayout(organizationId);
+    }
+    await this.syncFeatureMenuVisibility(organizationId);
+  }
+
+  /**
+   * Keep IAM menu isActive flags aligned with installed features.
+   * syncMenuLayout may reactivate catalog paths; this re-applies install/uninstall state.
+   */
+  private async syncFeatureMenuVisibility(organizationId: string): Promise<void> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { enabledFeatures: true },
+    });
+    if (!org) return;
+
+    const stored = Array.isArray(org.enabledFeatures)
+      ? (org.enabledFeatures as unknown[]).filter((v): v is string => typeof v === 'string')
+      : [];
+    const enabled = new Set(stored.length > 0 ? stored : DEFAULT_ENABLED_FEATURES);
+
+    for (const feature of PLATFORM_FEATURE_CATALOG) {
+      if (feature.menuPaths.length === 0) continue;
+      await this.setFeatureMenusActive(organizationId, feature.id, enabled.has(feature.id));
     }
   }
 
@@ -381,7 +405,7 @@ export class IamService {
     });
   }
 
-  async listMenuGroups(organizationId: string) {
+  async listMenuGroups(organizationId: string, forPermissions = false) {
     await this.ensureCrudPermissions(organizationId);
     const { db } = await this.resolveDb(organizationId);
     const menuInclude = {
@@ -402,20 +426,38 @@ export class IamService {
         },
       },
     });
+
+    /** Platform admin IA — never assignable via the role permissions matrix. */
+    const EXCLUDED_PERMISSION_CODES = new Set([
+      'ADMINISTRATION',
+      'ACCESS',
+      'CONFIG',
+      'ADMIN',
+    ]);
+
+    const filtered = forPermissions
+      ? groups.filter(
+          (g: { code: string; excludeFromPermissions?: boolean }) =>
+            !g.excludeFromPermissions && !EXCLUDED_PERMISSION_CODES.has(g.code),
+        )
+      : groups;
+
     const ungroupedMenus = await db.menu.findMany({
       where: { organizationId, groupId: null, parentId: null },
       orderBy: { sortOrder: 'asc' },
       include: menuInclude,
     });
-    if (ungroupedMenus.length === 0) return groups;
+    if (ungroupedMenus.length === 0) return filtered;
+    if (forPermissions) return filtered;
     return [
-      ...groups,
+      ...filtered,
       {
         id: '__outer__',
         name: 'Outer (no main menu)',
         code: '_OUTER',
         sortOrder: 9999,
         isActive: true,
+        excludeFromPermissions: false,
         organizationId,
         createdAt: new Date(0),
         updatedAt: new Date(0),
@@ -684,6 +726,16 @@ export class IamService {
   async getMemberPermissionCodes(organizationId: string, userId: string): Promise<string[]> {
     await this.ensureSeeded(organizationId, userId);
     const { db } = await this.resolveDb(organizationId);
+
+    const platformUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isPlatformAdmin: true },
+    });
+    if (platformUser?.isPlatformAdmin) {
+      const all = await db.permission.findMany({ where: { organizationId } });
+      return all.map((p: { code: string }) => p.code);
+    }
+
     const member = await db.organizationMember.findUnique({
       where: { organizationId_userId: { organizationId, userId } },
       include: {
@@ -739,7 +791,15 @@ export class IamService {
 
     const allowedMenuIds = new Set<string>();
     let landingPath = '/app';
-    if (member?.role === 'OWNER' || member?.role === 'ADMIN') {
+    const platformUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isPlatformAdmin: true },
+    });
+    const isOrgAdmin =
+      Boolean(platformUser?.isPlatformAdmin) ||
+      member?.role === 'OWNER' ||
+      member?.role === 'ADMIN';
+    if (isOrgAdmin) {
       const allMenus = await db.menu.findMany({
         where: { organizationId, isActive: true },
       });
@@ -804,8 +864,6 @@ export class IamService {
     };
 
     const mapMenu = (m: MenuRow): SidebarMenuDto | null => {
-      if (!allowedMenuIds.has(m.id)) return null;
-      if (m.permission && !permissionSet.has(m.permission.code)) return null;
       const children = m.children
         .map((c) => {
           if (!allowedMenuIds.has(c.id)) return null;
@@ -822,8 +880,24 @@ export class IamService {
           };
         })
         .filter(Boolean) as SidebarMenuDto[];
-      // Parent folder menus (no path) stay visible when they have allowed children
-      if (!m.path && children.length === 0) return null;
+
+      // Folder / section parents (no path): show when any child is allowed
+      if (!m.path && !m.formId) {
+        if (children.length === 0) return null;
+        return {
+          id: m.id,
+          label: m.label,
+          path: null,
+          icon: m.icon,
+          formId: m.formId,
+          permissionCode: m.permission?.code ?? null,
+          sortOrder: m.sortOrder,
+          children,
+        };
+      }
+
+      if (!allowedMenuIds.has(m.id)) return null;
+      if (m.permission && !permissionSet.has(m.permission.code)) return null;
       return {
         id: m.id,
         label: m.label,
@@ -891,6 +965,41 @@ export class IamService {
     return [];
   }
 
+  private parseFeatureSubscriptions(raw: unknown): string[] {
+    return this.parseEnabledFeatures(raw);
+  }
+
+  /**
+   * Activate or deactivate IAM menus owned by a catalog feature (project or platform DB).
+   * Keeps sidebar in sync when features are installed / uninstalled.
+   */
+  async setFeatureMenusActive(
+    organizationId: string,
+    featureId: string,
+    isActive: boolean,
+  ): Promise<void> {
+    const feature = PLATFORM_FEATURE_CATALOG.find((f) => f.id === featureId);
+    if (!feature) return;
+
+    const { db } = await this.resolveDb(organizationId);
+    const paths = [...feature.menuPaths];
+
+    if (paths.length > 0) {
+      await db.menu.updateMany({
+        where: { organizationId, path: { in: paths } },
+        data: { isActive },
+      });
+    }
+
+    // Form-linked menus (`/app/data/:formId`) are gated by the Forms feature.
+    if (featureId === 'forms') {
+      await db.menu.updateMany({
+        where: { organizationId, path: { startsWith: '/app/data/' } },
+        data: { isActive },
+      });
+    }
+  }
+
   /** Sidebar menu trees for all projects the user is an active member of. */
   async listProjectSidebars(userId: string): Promise<{
     projects: Array<{
@@ -898,6 +1007,7 @@ export class IamService {
       name: string;
       slug: string;
       enabledFeatures: string[];
+      featureSubscriptions: string[];
       groups: SidebarGroupDto[];
     }>;
   }> {
@@ -919,6 +1029,7 @@ export class IamService {
           name: m.organization.name,
           slug: m.organization.slug,
           enabledFeatures: this.parseEnabledFeatures(m.organization.enabledFeatures),
+          featureSubscriptions: this.parseFeatureSubscriptions(m.organization.featureSubscriptions),
           groups: sidebar.groups,
         };
       }),

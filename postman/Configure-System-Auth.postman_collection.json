@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "DMS Auth API",
-    "description": "Phase 0/1 Authentication endpoints for fullcursor DMS",
+    "name": "Configure System Auth API",
+    "description": "Phase 0/1 Authentication endpoints for Configure System",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -28,7 +28,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"demo@dms.local\",\n  \"password\": \"Password1\",\n  \"firstName\": \"Demo\",\n  \"lastName\": \"User\"\n}"
+              "raw": "{\n  \"email\": \"demo@configure.local\",\n  \"password\": \"Password1\",\n  \"firstName\": \"Demo\",\n  \"lastName\": \"User\"\n}"
             },
             "url": "{{baseUrl}}/auth/register"
           }
@@ -55,7 +55,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"demo@dms.local\",\n  \"password\": \"Password1\",\n  \"deviceName\": \"Postman\"\n}"
+              "raw": "{\n  \"email\": \"demo@configure.local\",\n  \"password\": \"Password1\",\n  \"deviceName\": \"Postman\"\n}"
             },
             "url": "{{baseUrl}}/auth/login"
           }
@@ -132,7 +132,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"demo@dms.local\"\n}"
+              "raw": "{\n  \"email\": \"demo@configure.local\"\n}"
             },
             "url": "{{baseUrl}}/auth/forgot-password"
           }
@@ -168,7 +168,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"demo@dms.local\"\n}"
+              "raw": "{\n  \"email\": \"demo@configure.local\"\n}"
             },
             "url": "{{baseUrl}}/auth/resend-verification"
           }
@@ -180,7 +180,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"demo@dms.local\"\n}"
+              "raw": "{\n  \"email\": \"demo@configure.local\"\n}"
             },
             "url": "{{baseUrl}}/auth/otp/request"
           }
@@ -192,7 +192,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"demo@dms.local\",\n  \"otp\": \"123456\",\n  \"deviceName\": \"Postman OTP\"\n}"
+              "raw": "{\n  \"email\": \"demo@configure.local\",\n  \"otp\": \"123456\",\n  \"deviceName\": \"Postman OTP\"\n}"
             },
             "url": "{{baseUrl}}/auth/otp/verify"
           }

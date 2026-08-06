@@ -6,15 +6,15 @@ export function AuthLayout() {
       <aside className="auth-visual" aria-hidden={false}>
         <div className="auth-visual-brand">
           <Link to="/login" className="brand-mark compact">
-            <span className="brand-badge">E</span>
-            Enterprise Builder
+            <span className="brand-badge">C</span>
+            Configure System
           </Link>
         </div>
         <div>
-          <h2>Build enterprise apps as projects.</h2>
+          <h2>Configure projects as systems.</h2>
           <p>
-            Platform shell for projects, forms, grids, and IAM — metadata-driven today, multi-database
-            ready tomorrow.
+            Platform shell for projects, forms, grids, and IAM — metadata-driven setup with
+            per-project databases.
           </p>
         </div>
         <div className="auth-visual-meta">
@@ -36,7 +36,7 @@ export function AuthLayout() {
       <div className="auth-panel-wrap">
         <div className="auth-panel">
           <header className="auth-brand">
-            <p className="brand-tagline">Sign in to Enterprise Builder</p>
+            <p className="brand-tagline">Sign in to Configure System</p>
           </header>
           <Outlet />
         </div>

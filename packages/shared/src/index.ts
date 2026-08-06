@@ -82,7 +82,7 @@ export type ProjectStatus = 'ACTIVE' | 'DRAFT' | 'ARCHIVED' | 'SUSPENDED';
 
 /**
  * Organization row in the API / DB.
- * Product name: **Project** (Enterprise Builder).
+ * Product name: **Project** (Configure System).
  */
 export type OrganizationDto = {
   id: string;
@@ -102,8 +102,13 @@ export type OrganizationDto = {
   subdomain: string | null;
   /** Set when CREATE DATABASE succeeds (plain in local/dev). */
   connectionString: string | null;
-  /** Installed platform feature keys. */
+  /** Installed (activated) feature keys for this project. */
   enabledFeatures: string[];
+  /**
+   * Subscribed / admin-granted premium feature keys.
+   * Features with `requiresSubscription` need both install and subscription to unlock fully.
+   */
+  featureSubscriptions: string[];
   ownerId: string;
   /** Present on list/mine responses: caller's membership role in this project. */
   membershipRole?: OrgRole;
@@ -113,10 +118,37 @@ export type OrganizationDto = {
   provisioningWarning?: string;
   /** Present on create: true when CREATE DATABASE succeeded. */
   databaseProvisioned?: boolean;
+  /**
+   * Present on create only: the single project-admin account (password shown once).
+   * Platform admins create this user; day-to-day IAM/features are owned by them.
+   */
+  projectAdmin?: {
+    userId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    /** Plaintext password — only returned on create; never stored. */
+    password: string;
+    /** Relative login path, e.g. `/hospital-management/login`. */
+    loginUrl: string;
+    /** True when a new platform User row was created for this email. */
+    userCreated: boolean;
+  };
 };
 
 /** Alias for product-facing Project terminology. */
 export type ProjectDto = OrganizationDto;
+
+/** Response from DELETE /organizations/:id (platform admin). */
+export type DeleteOrganizationResultDto = {
+  id: string;
+  name: string;
+  databaseName: string | null;
+  /** True when a physical Postgres DROP DATABASE ran successfully. */
+  databaseDropped: boolean;
+  /** Set when DROP failed or was skipped but metadata was still removed. */
+  databaseDropWarning?: string;
+};
 
 /** Project-DB login page branding / auth options. */
 export type LoginPageConfigDto = {
@@ -159,6 +191,11 @@ export type PlatformFeatureCatalogItem = {
   menuPaths: string[];
   /** True when the engine is stubbed / coming soon. */
   comingSoon?: boolean;
+  /**
+   * When true, installing only shows the nav item; full use requires
+   * `featureSubscriptions` (mock checkout or platform-admin grant).
+   */
+  requiresSubscription?: boolean;
 };
 
 export type BranchDto = {
@@ -362,38 +399,121 @@ export type SidebarResponse = {
   landingPath: string;
 };
 
-/** One project's menu tree for the platform DMS sidebar. */
+/** One project's menu tree for the platform sidebar. */
 export type ProjectSidebarDto = {
   organizationId: string;
   name: string;
   slug: string;
   enabledFeatures: string[];
+  featureSubscriptions: string[];
   groups: SidebarGroupDto[];
+};
+
+/** Platform shell Administration links (shown above Projects on `/app/*`). */
+export type PlatformAdminMenuItem = {
+  label: string;
+  path: string;
+  /** When set, only show if this feature is installed on the current project. */
+  featureId?: string;
 };
 
 export type ProjectSidebarsResponse = {
   projects: ProjectSidebarDto[];
 };
 
-/** Platform shell paths that stay visible regardless of installed features. */
-export const PLATFORM_SHELL_PATHS = ['/app/projects', '/app/features'] as const;
+/**
+ * Platform shell paths that stay visible regardless of installed *project* features.
+ * Platform Administration menus are gated separately via `PLATFORM_SHELL_FEATURE_CATALOG`.
+ */
+export const PLATFORM_SHELL_PATHS = ['/app/projects', '/app/platform-features'] as const;
 
-/** Default features installed when a new project is created. */
+/** Core platform shell features — cannot be uninstalled. */
+export const PROTECTED_PLATFORM_FEATURES: readonly string[] = [
+  'projects',
+  'platform-features',
+] as const;
+
+export function isProtectedPlatformFeature(featureId: string): boolean {
+  return (PROTECTED_PLATFORM_FEATURES as readonly string[]).includes(featureId);
+}
+
+/** Configure System–only entries (not shown on project Features pages). */
+export const PLATFORM_SHELL_ONLY_FEATURES: PlatformFeatureCatalogItem[] = [
+  {
+    id: 'projects',
+    name: 'Projects',
+    description: 'Project dashboard — create, open, and manage tenant projects.',
+    category: 'Core',
+    menuPaths: ['/app/projects'],
+  },
+  {
+    id: 'platform-features',
+    name: 'Platform features',
+    description: 'Enable or disable Configure System features (same catalog as project Features).',
+    category: 'Core',
+    menuPaths: ['/app/platform-features'],
+  },
+];
+
+export type PlatformConfigDto = {
+  id: string;
+  enabledFeatures: string[];
+  updatedAt: string;
+};
+
+/**
+ * Default features installed when a new project is created.
+ * Login page is free/default; chat/calls/etc. must be installed per project.
+ * Users/roles/features stay so project Access Management + marketplace work out of the box.
+ * Menu Builder is optional — install from Features when needed.
+ */
 export const DEFAULT_ENABLED_FEATURES: string[] = [
   'dashboard',
   'users',
   'roles',
-  'forms',
-  'grids',
-  'reports',
-  'chat',
-  'notifications',
-  'audit',
-  'activity',
-  'sessions',
-  'calls',
   'login-page',
-  'menu-builder',
+  'features',
+];
+
+/**
+ * Core project features. Project admins cannot uninstall these; platform admins can.
+ * Marketplace features (chat, forms, …) are always uninstallable by project OWNER/ADMIN.
+ */
+export const PROTECTED_PROJECT_FEATURES: readonly string[] = [
+  'dashboard',
+  'users',
+  'roles',
+  'login-page',
+] as const;
+
+/** Whether a catalog feature is core and restricted for uninstall. */
+export function isProtectedProjectFeature(featureId: string): boolean {
+  return (PROTECTED_PROJECT_FEATURES as readonly string[]).includes(featureId);
+}
+
+/** Menu group code for platform-only Administration (hidden inside project workspaces). */
+export const ADMINISTRATION_MENU_GROUP_CODE = 'ADMINISTRATION';
+
+/** Paths kept out of Administration (header chrome or Projects section). */
+const PLATFORM_ADMIN_HIDDEN_PATHS = new Set([
+  '/app',
+  '/app/projects',
+  '/app/notifications',
+  '/app/profile',
+  '/app/search',
+]);
+
+/**
+ * Static Administration links for the platform shell (`/app/*`), shown above Projects.
+ * Prefer `platformAdministrationMenusForFeatures()` so enable/disable drives the sidebar.
+ */
+export const PLATFORM_ADMINISTRATION_MENUS: PlatformAdminMenuItem[] = [
+  { label: 'Platform features', path: '/app/platform-features', featureId: 'platform-features' },
+  { label: 'Users', path: '/app/users', featureId: 'users' },
+  { label: 'Identity & Access', path: '/app/iam', featureId: 'roles' },
+  { label: 'Login page', path: '/app/settings/login', featureId: 'login-page' },
+  { label: 'Forms', path: '/app/forms', featureId: 'forms' },
+  { label: 'Menus', path: '/app/menus', featureId: 'menu-builder' },
 ];
 
 /** Static marketplace catalog (Phase 1 — not yet DB-backed plugins). */
@@ -451,9 +571,10 @@ export const PLATFORM_FEATURE_CATALOG: PlatformFeatureCatalogItem[] = [
   {
     id: 'chat',
     name: 'Chat',
-    description: 'Project team messaging.',
+    description: 'Project team messaging. Requires a subscription after install.',
     category: 'Workspace',
     menuPaths: ['/app/chat'],
+    requiresSubscription: true,
   },
   {
     id: 'notifications',
@@ -476,6 +597,14 @@ export const PLATFORM_FEATURE_CATALOG: PlatformFeatureCatalogItem[] = [
     category: 'Configuration',
     menuPaths: [],
     comingSoon: true,
+  },
+  {
+    id: 'features',
+    name: 'Features',
+    description:
+      'Install and uninstall project features from the marketplace. Uninstall to hide this page from the sidebar (re-open via Projects → Features).',
+    category: 'Configuration',
+    menuPaths: ['/app/features'],
   },
   {
     id: 'menu-builder',
@@ -509,18 +638,143 @@ export const PLATFORM_FEATURE_CATALOG: PlatformFeatureCatalogItem[] = [
   {
     id: 'calls',
     name: 'Calls',
-    description: 'Call history and sessions.',
+    description: 'Call history and sessions. Requires a subscription after install.',
     category: 'Workspace',
     menuPaths: ['/app/calls'],
+    requiresSubscription: true,
   },
   {
     id: 'login-page',
     name: 'Login page',
-    description: 'Project login branding and auth method flags (stored in project DB).',
+    description: 'Project login branding and auth method flags (stored in project DB). Free / default.',
     category: 'Configuration',
     menuPaths: ['/app/settings/login'],
   },
 ];
+
+/**
+ * Configure System Platform features page catalog:
+ * shell-only (Projects, Platform features) + full project marketplace
+ * (same cards as `/{slug}/features`).
+ */
+export const PLATFORM_SHELL_FEATURE_CATALOG: PlatformFeatureCatalogItem[] = [
+  ...PLATFORM_SHELL_ONLY_FEATURES,
+  ...PLATFORM_FEATURE_CATALOG,
+];
+
+/**
+ * Build Configure System Administration sidebar from enabled platform features.
+ * Enable → menu appears; disable → menu removed.
+ */
+export function platformAdministrationMenusForFeatures(
+  enabledFeatures: string[] | null | undefined,
+): PlatformAdminMenuItem[] {
+  const enabled = new Set(enabledFeatures ?? defaultPlatformEnabledFeatures());
+  const items: PlatformAdminMenuItem[] = [];
+  const seenPaths = new Set<string>();
+
+  for (const feature of PLATFORM_SHELL_FEATURE_CATALOG) {
+    if (feature.comingSoon) continue;
+    if (!enabled.has(feature.id)) continue;
+    // Projects lives in the Projects section below Administration.
+    if (feature.id === 'projects') continue;
+
+    for (const path of feature.menuPaths) {
+      if (!path || PLATFORM_ADMIN_HIDDEN_PATHS.has(path) || seenPaths.has(path)) continue;
+      seenPaths.add(path);
+      items.push({
+        label: feature.name,
+        path,
+        featureId: feature.id,
+      });
+    }
+  }
+
+  return items;
+}
+
+/** Default enabled set for new PlatformConfig rows (all installable marketplace + shell cores). */
+export function defaultPlatformEnabledFeatures(): string[] {
+  return [
+    ...PROTECTED_PLATFORM_FEATURES,
+    ...PLATFORM_FEATURE_CATALOG.filter((f) => !f.comingSoon).map((f) => f.id),
+  ];
+}
+
+/**
+ * Default features enabled for Configure System.
+ * Same marketplace coverage as project Features (`/{slug}/features`), plus shell cores.
+ */
+export const DEFAULT_PLATFORM_ENABLED_FEATURES: string[] = defaultPlatformEnabledFeatures();
+
+/** Shell catalog shares the marketplace feature shape. */
+export type PlatformShellFeatureCatalogItem = PlatformFeatureCatalogItem;
+
+export function getPlatformShellFeatureById(
+  featureId: string,
+): PlatformFeatureCatalogItem | undefined {
+  return PLATFORM_SHELL_FEATURE_CATALOG.find((f) => f.id === featureId);
+}
+
+/** Look up a catalog feature by id. */
+export function getFeatureById(featureId: string): PlatformFeatureCatalogItem | undefined {
+  return PLATFORM_FEATURE_CATALOG.find((f) => f.id === featureId);
+}
+
+/** Catalog feature that owns a sidebar menu path (exact match). */
+export function getFeatureByMenuPath(path: string): PlatformFeatureCatalogItem | undefined {
+  return PLATFORM_FEATURE_CATALOG.find((f) => f.menuPaths.includes(path));
+}
+
+/** Whether a catalog feature requires a paid/approved subscription after install. */
+export function featureRequiresSubscription(featureId: string): boolean {
+  return Boolean(getFeatureById(featureId)?.requiresSubscription);
+}
+
+/** Whether the feature is subscribed or admin-granted for the project. */
+export function isFeatureSubscribed(
+  featureId: string,
+  featureSubscriptions: string[] | null | undefined,
+): boolean {
+  return (featureSubscriptions ?? []).includes(featureId);
+}
+
+/**
+ * Fully unlocked: installed, and subscribed when the catalog marks it premium.
+ * Free features (e.g. login-page) only need to be installed.
+ */
+export function isFeatureFullyEnabled(
+  featureId: string,
+  enabledFeatures: string[] | null | undefined,
+  featureSubscriptions: string[] | null | undefined,
+): boolean {
+  const enabled = enabledFeatures ?? [];
+  if (!enabled.includes(featureId)) return false;
+  if (!featureRequiresSubscription(featureId)) return true;
+  return isFeatureSubscribed(featureId, featureSubscriptions);
+}
+
+/** Canonical subscribe / paywall path for a premium feature. */
+export function featureSubscribeAppPath(featureId: string): string {
+  return `/app/features/subscribe/${encodeURIComponent(featureId)}`;
+}
+
+/**
+ * Resolve the href for a menu path: premium features that are installed but not
+ * subscribed open the subscription page instead of the real feature route.
+ */
+export function resolveFeatureNavAppPath(
+  appPath: string,
+  enabledFeatures: string[] | null | undefined,
+  featureSubscriptions: string[] | null | undefined,
+): string {
+  const feature = getFeatureByMenuPath(appPath);
+  if (!feature?.requiresSubscription) return appPath;
+  const enabled = enabledFeatures ?? [];
+  if (!enabled.includes(feature.id)) return appPath;
+  if (isFeatureSubscribed(feature.id, featureSubscriptions)) return appPath;
+  return featureSubscribeAppPath(feature.id);
+}
 
 /** Paths allowed in the sidebar for a given enabledFeatures list. */
 export function menuPathsForFeatures(enabledFeatures: string[]): Set<string> {
@@ -545,6 +799,11 @@ export function isMenuPathAllowedForFeatures(
   if (exact.has(path)) return true;
   if (path.startsWith('/app/data/') && enabledFeatures.includes('forms')) return true;
   return false;
+}
+
+/** True when the menu group is platform Administration (hide inside `/{slug}`). */
+export function isAdministrationMenuGroup(code: string | null | undefined): boolean {
+  return code === ADMINISTRATION_MENU_GROUP_CODE;
 }
 
 /** Canonical path for a form-linked sidebar menu. */
@@ -579,7 +838,28 @@ export const RESERVED_PROJECT_SLUGS = new Set([
  * even when the user is inside a project workspace.
  */
 export function isPlatformOnlyAppPath(appPath: string): boolean {
-  return appPath === '/app/projects' || appPath.startsWith('/app/projects/');
+  return (
+    appPath === '/app/projects' ||
+    appPath.startsWith('/app/projects/') ||
+    appPath === '/app/forms' ||
+    appPath.startsWith('/app/forms/') ||
+    appPath === '/app/platform-features' ||
+    appPath.startsWith('/app/platform-features/')
+  );
+}
+
+/** Whether a platform Administration menu path is allowed for installed shell features. */
+export function isPlatformShellPathAllowed(
+  path: string,
+  enabledFeatures: string[] | null | undefined,
+): boolean {
+  if ((PLATFORM_SHELL_PATHS as readonly string[]).includes(path)) return true;
+  const enabled = enabledFeatures ?? DEFAULT_PLATFORM_ENABLED_FEATURES;
+  for (const feature of PLATFORM_SHELL_FEATURE_CATALOG) {
+    if (!enabled.includes(feature.id)) continue;
+    if (feature.menuPaths.includes(path)) return true;
+  }
+  return false;
 }
 
 /**

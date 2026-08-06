@@ -8,6 +8,7 @@ import {
 } from '@dms/shared';
 import { useAuth } from './features/auth/auth-context';
 import { OrgProvider, useOrg } from './features/org/org-context';
+import { PlatformConfigProvider } from './features/org/platform-config-context';
 import { IamProvider } from './features/iam/iam-context';
 import { LoginPage } from './features/auth/pages/LoginPage';
 import { RegisterPage } from './features/auth/pages/RegisterPage';
@@ -21,6 +22,8 @@ import { ProjectsPage } from './features/org/pages/ProjectsPage';
 import { CreateProjectPage } from './features/org/pages/CreateProjectPage';
 import { ProjectSettingsPage } from './features/org/pages/ProjectSettingsPage';
 import { FeaturesPage } from './features/org/pages/FeaturesPage';
+import { PlatformFeaturesPage } from './features/org/pages/PlatformFeaturesPage';
+import { SubscribeFeaturePage } from './features/org/pages/SubscribeFeaturePage';
 import { LoginPageSettingsPage } from './features/org/pages/LoginPageSettingsPage';
 import { UsersPage } from './features/users/pages/UsersPage';
 import { ProfilePage } from './features/users/pages/ProfilePage';
@@ -44,6 +47,8 @@ import { DoctorPatientsPage } from './features/hospital/pages/DoctorPatientsPage
 import { PatientProfilePage } from './features/hospital/pages/PatientProfilePage';
 import { AuthLayout } from './components/AuthLayout';
 import { AppShell } from './components/AppShell';
+import { RequireFeatureSubscription } from './components/RequireFeatureSubscription';
+import { RequirePlatformFeature } from './components/RequirePlatformFeature';
 
 function Protected({ children }: { children: ReactNode }) {
   const { user, bootstrapping } = useAuth();
@@ -55,7 +60,9 @@ function Protected({ children }: { children: ReactNode }) {
   }
   return (
     <OrgProvider>
-      <IamProvider>{children}</IamProvider>
+      <PlatformConfigProvider>
+        <IamProvider>{children}</IamProvider>
+      </PlatformConfigProvider>
     </OrgProvider>
   );
 }
@@ -76,9 +83,11 @@ function ProjectProtected({ children }: { children: ReactNode }) {
   }
   return (
     <OrgProvider>
-      <IamProvider>
-        <ProjectWorkspaceGuard>{children}</ProjectWorkspaceGuard>
-      </IamProvider>
+      <PlatformConfigProvider>
+        <IamProvider>
+          <ProjectWorkspaceGuard>{children}</ProjectWorkspaceGuard>
+        </IamProvider>
+      </PlatformConfigProvider>
     </OrgProvider>
   );
 }
@@ -220,17 +229,132 @@ export function App() {
         <Route path="/app/projects" element={<ProjectsPage />} />
         <Route path="/app/projects/new" element={<CreateProjectPage />} />
         <Route path="/app/projects/:projectId/settings" element={<ProjectSettingsPage />} />
+        <Route path="/app/platform-features" element={<PlatformFeaturesPage />} />
+        <Route
+          path="/app/forms"
+          element={
+            <RequirePlatformFeature featureId="forms">
+              <FormsPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/features"
+          element={
+            <RequirePlatformFeature featureId="features">
+              <FeaturesPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/features/subscribe/:featureCode"
+          element={
+            <RequirePlatformFeature featureId="features">
+              <SubscribeFeaturePage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/settings/login"
+          element={
+            <RequirePlatformFeature featureId="login-page">
+              <LoginPageSettingsPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/users"
+          element={
+            <RequirePlatformFeature featureId="users">
+              <UsersPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/iam"
+          element={
+            <RequirePlatformFeature featureId="roles">
+              <IamPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/dashboards"
+          element={
+            <RequirePlatformFeature featureId="reports">
+              <DashboardsAdminPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/menus"
+          element={
+            <RequirePlatformFeature featureId="menu-builder">
+              <MenuBuilderPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/grids"
+          element={
+            <RequirePlatformFeature featureId="grids">
+              <GridsPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/notifications"
+          element={
+            <RequirePlatformFeature featureId="notifications">
+              <NotificationsPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/activity"
+          element={
+            <RequirePlatformFeature featureId="activity">
+              <ActivityPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/audit"
+          element={
+            <RequirePlatformFeature featureId="audit">
+              <AuditPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/chat"
+          element={
+            <RequirePlatformFeature featureId="chat">
+              <ChatPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/calls"
+          element={
+            <RequirePlatformFeature featureId="calls">
+              <CallsPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route
+          path="/app/sessions"
+          element={
+            <RequirePlatformFeature featureId="sessions">
+              <SessionsPage />
+            </RequirePlatformFeature>
+          }
+        />
+        <Route path="/app/profile" element={<ProfilePage />} />
         <Route path="/app/organization" element={<Navigate to="/app/projects" replace />} />
         <Route path="/app/masters" element={<Navigate to="/app/projects" replace />} />
 
-        {/* Legacy `/app/*` workspace → current project slug */}
-        <Route path="/app/features" element={<LegacyWorkspaceRedirect appPath="/app/features" />} />
-        <Route path="/app/settings/login" element={<LegacyWorkspaceRedirect appPath="/app/settings/login" />} />
-        <Route path="/app/users" element={<LegacyWorkspaceRedirect appPath="/app/users" />} />
-        <Route path="/app/iam" element={<LegacyWorkspaceRedirect appPath="/app/iam" />} />
-        <Route path="/app/dashboards" element={<LegacyWorkspaceRedirect appPath="/app/dashboards" />} />
-        <Route path="/app/forms" element={<LegacyWorkspaceRedirect appPath="/app/forms" />} />
-        <Route path="/app/menus" element={<LegacyWorkspaceRedirect appPath="/app/menus" />} />
+        {/* Form data deep-links still resolve into the selected project workspace */}
         <Route path="/app/data/:formId/new" element={<LegacyFormRecordNewRedirect />} />
         <Route
           path="/app/data/:formId/:submissionId/edit"
@@ -241,14 +365,6 @@ export function App() {
           element={<LegacyFormRecordViewRedirect />}
         />
         <Route path="/app/data/:formId" element={<LegacyFormDataRedirect />} />
-        <Route path="/app/grids" element={<LegacyWorkspaceRedirect appPath="/app/grids" />} />
-        <Route path="/app/notifications" element={<LegacyWorkspaceRedirect appPath="/app/notifications" />} />
-        <Route path="/app/activity" element={<LegacyWorkspaceRedirect appPath="/app/activity" />} />
-        <Route path="/app/audit" element={<LegacyWorkspaceRedirect appPath="/app/audit" />} />
-        <Route path="/app/chat" element={<LegacyWorkspaceRedirect appPath="/app/chat" />} />
-        <Route path="/app/calls" element={<LegacyWorkspaceRedirect appPath="/app/calls" />} />
-        <Route path="/app/profile" element={<LegacyWorkspaceRedirect appPath="/app/profile" />} />
-        <Route path="/app/sessions" element={<LegacyWorkspaceRedirect appPath="/app/sessions" />} />
       </Route>
 
       {/* Project workspace: `/{slug}/dashboard`, `/{slug}/users`, … */}
@@ -263,12 +379,20 @@ export function App() {
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="features" element={<FeaturesPage />} />
+        <Route path="features/subscribe/:featureCode" element={<SubscribeFeaturePage />} />
         <Route path="settings/login" element={<LoginPageSettingsPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="iam" element={<IamPage />} />
         <Route path="dashboards" element={<DashboardsAdminPage />} />
         <Route path="forms" element={<FormsPage />} />
-        <Route path="menus" element={<MenuBuilderPage />} />
+        <Route
+          path="menus"
+          element={
+            <RequireFeatureSubscription featureId="menu-builder">
+              <MenuBuilderPage />
+            </RequireFeatureSubscription>
+          }
+        />
         <Route path="data/:formId/new" element={<FormRecordFormPage mode="create" />} />
         <Route
           path="data/:formId/:submissionId/edit"
@@ -281,12 +405,47 @@ export function App() {
         <Route path="data/:formId" element={<FormRecordsPage />} />
         <Route path="grids" element={<GridsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="activity" element={<ActivityPage />} />
-        <Route path="audit" element={<AuditPage />} />
-        <Route path="chat" element={<ChatPage />} />
-        <Route path="calls" element={<CallsPage />} />
+        <Route
+          path="activity"
+          element={
+            <RequireFeatureSubscription featureId="activity">
+              <ActivityPage />
+            </RequireFeatureSubscription>
+          }
+        />
+        <Route
+          path="audit"
+          element={
+            <RequireFeatureSubscription featureId="audit">
+              <AuditPage />
+            </RequireFeatureSubscription>
+          }
+        />
+        <Route
+          path="chat"
+          element={
+            <RequireFeatureSubscription featureId="chat">
+              <ChatPage />
+            </RequireFeatureSubscription>
+          }
+        />
+        <Route
+          path="calls"
+          element={
+            <RequireFeatureSubscription featureId="calls">
+              <CallsPage />
+            </RequireFeatureSubscription>
+          }
+        />
         <Route path="profile" element={<ProfilePage />} />
-        <Route path="sessions" element={<SessionsPage />} />
+        <Route
+          path="sessions"
+          element={
+            <RequireFeatureSubscription featureId="sessions">
+              <SessionsPage />
+            </RequireFeatureSubscription>
+          }
+        />
         <Route path="hospital/book" element={<BookAppointmentPage />} />
         <Route path="hospital/my-appointments" element={<MyAppointmentsPage />} />
         <Route path="hospital/schedule" element={<DoctorSchedulePage />} />

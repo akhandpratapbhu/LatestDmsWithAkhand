@@ -531,7 +531,7 @@ export function MenuBuilderPage() {
     <div>
       <PageHeader
         title="Menu Builder"
-        description="Create main menus (sidebar sections) and submenus for a specific project — nested under that project in the DMS sidebar."
+        description="Create main menus (sidebar sections) and submenus for a specific project — nested under that project in the platform sidebar."
       />
 
       {error && <div className="alert error">{error}</div>}

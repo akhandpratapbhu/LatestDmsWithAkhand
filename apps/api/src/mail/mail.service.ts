@@ -14,7 +14,7 @@ export class MailService {
     private readonly logger: AppLogger,
   ) {
     this.enabled = config.get<string>('EMAIL_ENABLED', 'false') === 'true';
-    this.from = config.get<string>('SMTP_FROM', 'DMS <noreply@dms.local>');
+    this.from = config.get<string>('SMTP_FROM', 'Configure System <noreply@configure.local>');
 
     if (this.enabled) {
       this.transporter = nodemailer.createTransport({

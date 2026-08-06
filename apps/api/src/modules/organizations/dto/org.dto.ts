@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsEmail,
   IsIn,
   IsInt,
   IsOptional,
@@ -85,6 +86,33 @@ export class CreateOrganizationDto {
   @IsArray()
   @IsString({ each: true })
   enabledFeatures?: string[];
+
+  /** Project admin (single OWNER) — required when creating a new project. */
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  adminFirstName!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  adminLastName!: string;
+
+  @IsEmail()
+  adminEmail!: string;
+
+  /**
+   * Optional. When omitted, a strong password is generated and returned once
+   * in the create response (`projectAdmin.password`).
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, {
+    message: 'Password must contain at least one letter and one number',
+  })
+  adminPassword?: string;
 }
 
 export class UpdateOrganizationDto {

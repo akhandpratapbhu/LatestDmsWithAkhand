@@ -5,7 +5,7 @@
  *   Email: akhandpratap121196@gmail.com
  *   Sets isPlatformAdmin=true; does not reset password if the user already exists.
  *
- * Full demo data (admin@dms.local / manager / member + Demo Company):
+ * Full demo data (admin@configure.local / manager / member + Demo Company):
  *   SEED_DEMO_USERS=1 npm run db:seed
  * Demo users are never platform admins.
  *
@@ -109,7 +109,7 @@ async function main() {
 
   if (process.env.SEED_DEMO_USERS !== '1') {
     console.log(
-      'Skipping demo users/org. Set SEED_DEMO_USERS=1 to seed admin@dms.local and related demo data.',
+      'Skipping demo users/org. Set SEED_DEMO_USERS=1 to seed admin@configure.local and related demo data.',
     );
     return;
   }
@@ -117,19 +117,19 @@ async function main() {
   const passwordHash = await bcrypt.hash(PASSWORD, 10);
 
   const admin = await upsertUser({
-    email: 'admin@dms.local',
+    email: 'admin@configure.local',
     firstName: 'Ada',
     lastName: 'Admin',
     passwordHash,
   });
   const manager = await upsertUser({
-    email: 'manager@dms.local',
+    email: 'manager@configure.local',
     firstName: 'Mia',
     lastName: 'Manager',
     passwordHash,
   });
   const member = await upsertUser({
-    email: 'member@dms.local',
+    email: 'member@configure.local',
     firstName: 'Sam',
     lastName: 'Member',
     passwordHash,
@@ -282,31 +282,82 @@ async function main() {
   }
 
   // Reorganize sidebar groups for enterprise IA
-  const ensureGroup = async (code: string, name: string, sortOrder: number) => {
+  const ensureGroup = async (
+    code: string,
+    name: string,
+    sortOrder: number,
+    extra?: { excludeFromPermissions?: boolean },
+  ) => {
     const existing = await prisma.menuGroup.findFirst({
       where: { organizationId: org.id, code },
     });
     if (existing) {
       return prisma.menuGroup.update({
         where: { id: existing.id },
-        data: { name, sortOrder, isActive: true },
+        data: {
+          name,
+          sortOrder,
+          isActive: true,
+          ...(extra?.excludeFromPermissions !== undefined
+            ? { excludeFromPermissions: extra.excludeFromPermissions }
+            : {}),
+        },
       });
     }
     return prisma.menuGroup.create({
-      data: { organizationId: org.id, name, code, sortOrder, isActive: true },
+      data: {
+        organizationId: org.id,
+        name,
+        code,
+        sortOrder,
+        isActive: true,
+        excludeFromPermissions: extra?.excludeFromPermissions ?? false,
+      },
+    });
+  };
+
+  const ensureSection = async (groupId: string, label: string, icon: string, sortOrder: number) => {
+    const existing = await prisma.menu.findFirst({
+      where: { organizationId: org.id, groupId, parentId: null, path: null, label },
+    });
+    if (existing) {
+      return prisma.menu.update({
+        where: { id: existing.id },
+        data: { icon, sortOrder, isActive: true, permissionId: null },
+      });
+    }
+    return prisma.menu.create({
+      data: {
+        organizationId: org.id,
+        groupId,
+        parentId: null,
+        path: null,
+        label,
+        icon,
+        sortOrder,
+        isActive: true,
+      },
     });
   };
 
   const mainGroup = await ensureGroup('MAIN', 'Main (Workspace)', 1);
-  const accessGroup = await ensureGroup('ACCESS', 'Access Control', 2);
-  const configGroup = await ensureGroup('CONFIG', 'Configuration', 3);
-  const governanceGroup = await ensureGroup('GOVERNANCE', 'Governance / Compliance', 4);
+  const adminGroup = await ensureGroup('ADMINISTRATION', 'Administration', 20, {
+    excludeFromPermissions: true,
+  });
+  const governanceGroup = await ensureGroup('GOVERNANCE', 'Governance / Compliance', 21);
 
-  // Legacy ADMIN group — hide if present
+  // Former flat ACCESS / CONFIG / legacy ADMIN — hide
+  await prisma.menuGroup.updateMany({
+    where: { organizationId: org.id, code: { in: ['ACCESS', 'CONFIG', 'ADMIN'] } },
+    data: { isActive: false, sortOrder: 99 },
+  });
   await prisma.menuGroup.updateMany({
     where: { organizationId: org.id, code: 'ADMIN' },
-    data: { isActive: false, name: 'Administration (legacy)', sortOrder: 99 },
+    data: { name: 'Administration (legacy)' },
   });
+
+  const accessSection = await ensureSection(adminGroup.id, 'Access Control', 'key', 1);
+  const configSection = await ensureSection(adminGroup.id, 'Configuration', 'settings', 2);
 
   const menuLayout: Array<{
     path: string;
@@ -314,25 +365,26 @@ async function main() {
     icon: string;
     permissionCode: string;
     groupId: string;
+    parentId: string | null;
     sortOrder: number;
     isActive?: boolean;
   }> = [
-    { path: '/app', label: 'Overview', icon: 'home', permissionCode: 'menu.overview', groupId: mainGroup.id, sortOrder: 1 },
-    { path: '/app/sessions', label: 'Sessions', icon: 'shield', permissionCode: 'menu.sessions', groupId: mainGroup.id, sortOrder: 2 },
-    { path: '/app/chat', label: 'Chat', icon: 'chat', permissionCode: 'menu.chat', groupId: mainGroup.id, sortOrder: 3 },
-    { path: '/app/calls', label: 'Calls history', icon: 'phone', permissionCode: 'menu.calls', groupId: mainGroup.id, sortOrder: 4 },
-    { path: '/app/activity', label: 'Activity', icon: 'activity', permissionCode: 'menu.activity', groupId: mainGroup.id, sortOrder: 5 },
-    { path: '/app/organization', label: 'Organization', icon: 'building', permissionCode: 'menu.organization', groupId: accessGroup.id, sortOrder: 1 },
-    { path: '/app/users', label: 'Users', icon: 'users', permissionCode: 'menu.users', groupId: accessGroup.id, sortOrder: 2 },
-    { path: '/app/iam', label: 'Identity & Access', icon: 'key', permissionCode: 'menu.iam', groupId: accessGroup.id, sortOrder: 3 },
-    { path: '/app/forms', label: 'Forms', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 2 },
-    { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: configGroup.id, sortOrder: 3 },
-    { path: '/app/dashboards', label: 'Dashboards', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, sortOrder: 4 },
-    { path: '/app/audit', label: 'Audit', icon: 'audit', permissionCode: 'menu.audit', groupId: governanceGroup.id, sortOrder: 1 },
+    { path: '/app', label: 'Overview', icon: 'home', permissionCode: 'menu.overview', groupId: mainGroup.id, parentId: null, sortOrder: 1 },
+    { path: '/app/sessions', label: 'Sessions', icon: 'shield', permissionCode: 'menu.sessions', groupId: mainGroup.id, parentId: null, sortOrder: 2 },
+    { path: '/app/chat', label: 'Chat', icon: 'chat', permissionCode: 'menu.chat', groupId: mainGroup.id, parentId: null, sortOrder: 3 },
+    { path: '/app/calls', label: 'Calls history', icon: 'phone', permissionCode: 'menu.calls', groupId: mainGroup.id, parentId: null, sortOrder: 4 },
+    { path: '/app/activity', label: 'Activity', icon: 'activity', permissionCode: 'menu.activity', groupId: mainGroup.id, parentId: null, sortOrder: 5 },
+    { path: '/app/projects', label: 'Projects', icon: 'building', permissionCode: 'menu.organization', groupId: adminGroup.id, parentId: accessSection.id, sortOrder: 1 },
+    { path: '/app/users', label: 'Users', icon: 'users', permissionCode: 'menu.users', groupId: adminGroup.id, parentId: accessSection.id, sortOrder: 2 },
+    { path: '/app/iam', label: 'Identity & Access', icon: 'key', permissionCode: 'menu.iam', groupId: adminGroup.id, parentId: accessSection.id, sortOrder: 3 },
+    { path: '/app/forms', label: 'Forms', icon: 'form', permissionCode: 'menu.forms', groupId: adminGroup.id, parentId: configSection.id, sortOrder: 2 },
+    { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: adminGroup.id, parentId: configSection.id, sortOrder: 3 },
+    { path: '/app/dashboards', label: 'Dashboards', icon: 'layout', permissionCode: 'menu.dashboards', groupId: adminGroup.id, parentId: configSection.id, sortOrder: 4 },
+    { path: '/app/audit', label: 'Audit', icon: 'audit', permissionCode: 'menu.audit', groupId: governanceGroup.id, parentId: null, sortOrder: 1 },
     // Header-only surfaces
-    { path: '/app/search', label: 'Search', icon: 'search', permissionCode: 'menu.search', groupId: mainGroup.id, sortOrder: 90, isActive: false },
-    { path: '/app/notifications', label: 'Notifications', icon: 'bell', permissionCode: 'menu.notifications', groupId: mainGroup.id, sortOrder: 91, isActive: false },
-    { path: '/app/profile', label: 'Profile', icon: 'user', permissionCode: 'menu.profile', groupId: mainGroup.id, sortOrder: 92, isActive: false },
+    { path: '/app/search', label: 'Search', icon: 'search', permissionCode: 'menu.search', groupId: mainGroup.id, parentId: null, sortOrder: 90, isActive: false },
+    { path: '/app/notifications', label: 'Notifications', icon: 'bell', permissionCode: 'menu.notifications', groupId: mainGroup.id, parentId: null, sortOrder: 91, isActive: false },
+    { path: '/app/profile', label: 'Profile', icon: 'user', permissionCode: 'menu.profile', groupId: mainGroup.id, parentId: null, sortOrder: 92, isActive: false },
   ];
 
   const allPermsForMenus = await prisma.permission.findMany({ where: { organizationId: org.id } });
@@ -341,6 +393,12 @@ async function main() {
   await prisma.menu.updateMany({
     where: { organizationId: org.id, path: '/app/masters' },
     data: { isActive: false },
+  });
+
+  // Prefer /app/projects over legacy /app/organization when both exist
+  await prisma.menu.updateMany({
+    where: { organizationId: org.id, path: '/app/organization' },
+    data: { path: '/app/projects', label: 'Projects' },
   });
 
   for (const m of menuLayout) {
@@ -354,6 +412,7 @@ async function main() {
           label: m.label,
           icon: m.icon,
           groupId: m.groupId,
+          parentId: m.parentId,
           sortOrder: m.sortOrder,
           isActive: m.isActive ?? true,
           permissionId: permByCode[m.permissionCode] ?? existingMenu.permissionId,
@@ -364,6 +423,7 @@ async function main() {
         data: {
           organizationId: org.id,
           groupId: m.groupId,
+          parentId: m.parentId,
           label: m.label,
           path: m.path,
           icon: m.icon,
@@ -883,7 +943,7 @@ async function main() {
       code: 'EMP001',
       firstName: 'Ada',
       lastName: 'Admin',
-      email: 'admin@dms.local',
+      email: 'admin@configure.local',
       designation: 'Administrator',
       department: 'IT',
       linkedUserId: admin.id,
@@ -956,9 +1016,9 @@ async function main() {
   console.log('Organization: Demo Company');
   console.log('Password for all demo users: Password1\n');
   console.log(`Platform admin (can create projects): ${PLATFORM_ADMIN_EMAIL}`);
-  console.log('admin@dms.local   → Admin Command Center (full menus) — NOT a platform admin');
-  console.log('manager@dms.local → Manager Workspace (org + users)');
-  console.log('member@dms.local  → Member Home (limited menus)');
+  console.log('admin@configure.local   → Admin Command Center (full menus) — NOT a platform admin');
+  console.log('manager@configure.local → Manager Workspace (org + users)');
+  console.log('member@configure.local  → Member Home (limited menus)');
   console.log('Sample form: EMP_ONBOARD · Sample grid: CONTACTS');
   console.log('Masters seeded: CUST001, DLR001, EMP001 (+ vendor/vehicle/part/product/warehouse)');
 }

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
@@ -43,6 +44,21 @@ export class OrganizationsController {
     return this.orgs.listMyOrganizations(user.userId);
   }
 
+  /**
+   * Platform admin: delete project metadata + DROP project Postgres DB.
+   * Query `force=true` removes metadata even when DROP DATABASE fails.
+   */
+  @Delete(':id')
+  delete(
+    @CurrentUser() user: JwtPayloadUser,
+    @Param('id') id: string,
+    @Query('force') force?: string,
+  ) {
+    return this.orgs.deleteOrganization(user.userId, id, {
+      force: force === '1' || force === 'true',
+    });
+  }
+
   @Get('features/catalog')
   featureCatalog() {
     return this.orgs.listFeatureCatalog();
@@ -71,8 +87,30 @@ export class OrganizationsController {
   @UseGuards(OrgGuard)
   @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
   @Post('features/uninstall')
-  uninstallFeature(@CurrentOrg() org: OrgContext, @Body() dto: ToggleFeatureDto) {
-    return this.orgs.uninstallFeature(org.organizationId, dto.featureId);
+  uninstallFeature(
+    @CurrentUser() user: JwtPayloadUser,
+    @CurrentOrg() org: OrgContext,
+    @Body() dto: ToggleFeatureDto,
+  ) {
+    return this.orgs.uninstallFeature(org.organizationId, dto.featureId, user.userId);
+  }
+
+  /** Mock checkout / request approval — marks premium feature subscribed for the project. */
+  @UseGuards(OrgGuard)
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Post('features/subscribe')
+  subscribeFeature(@CurrentOrg() org: OrgContext, @Body() dto: ToggleFeatureDto) {
+    return this.orgs.subscribeFeature(org.organizationId, dto.featureId, {
+      provider: 'mock-stripe',
+    });
+  }
+
+  /** Platform admin or project admin can revoke a premium subscription. */
+  @UseGuards(OrgGuard)
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Post('features/unsubscribe')
+  unsubscribeFeature(@CurrentOrg() org: OrgContext, @Body() dto: ToggleFeatureDto) {
+    return this.orgs.unsubscribeFeature(org.organizationId, dto.featureId);
   }
 
   // Branches — company can have multiple branches

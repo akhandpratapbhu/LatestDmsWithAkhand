@@ -386,6 +386,7 @@ async function stripClinicalMenusFromPortalRoles(db: TenantDb, organizationId: s
           'PHARMACY',
           'BILLING',
           'MASTERS',
+          'ADMINISTRATION',
           'ACCESS',
           'CONFIG',
           'GOVERNANCE',

@@ -3,16 +3,20 @@ import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'reac
 import { io } from 'socket.io-client';
 import {
   getProjectThemePreset,
+  isAdministrationMenuGroup,
   isMenuPathAllowedForFeatures,
+  platformAdministrationMenusForFeatures,
   resolveAppHref,
+  resolveFeatureNavAppPath,
   resolveProjectThemeId,
   toCanonicalAppPath,
-  type ProjectSidebarDto,
+  type OrganizationDto,
   type SidebarGroupDto,
   type SidebarMenuDto,
 } from '@dms/shared';
 import { useAuth } from '../features/auth/auth-context';
 import { useOrg } from '../features/org/org-context';
+import { usePlatformConfig } from '../features/org/platform-config-context';
 import { useIam } from '../features/iam/iam-context';
 import { api, getAccessToken } from '../lib/api';
 import { useDocumentTheme } from '../lib/project-theme';
@@ -20,22 +24,11 @@ import { UserAvatar } from './UserAvatar';
 import { SearchModal } from './SearchModal';
 
 const HIDDEN_SIDEBAR_PATHS = new Set(['/app/notifications', '/app/profile', '/app/search']);
-const SIDEBAR_OPEN_KEY = 'dms_sidebar_open_groups';
-const SIDEBAR_OPEN_PROJECTS_KEY = 'dms_sidebar_open_projects';
+const SIDEBAR_OPEN_KEY = 'configure_sidebar_open_groups';
 
 function loadOpenGroups(): Record<string, boolean> {
   try {
     const raw = localStorage.getItem(SIDEBAR_OPEN_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as Record<string, boolean>;
-  } catch {
-    return {};
-  }
-}
-
-function loadOpenProjects(): Record<string, boolean> {
-  try {
-    const raw = localStorage.getItem(SIDEBAR_OPEN_PROJECTS_KEY);
     if (!raw) return {};
     return JSON.parse(raw) as Record<string, boolean>;
   } catch {
@@ -81,8 +74,10 @@ function filterMenusForFeatures(
 function filterGroupsForFeatures(
   groups: SidebarGroupDto[],
   enabledFeatures: string[],
+  opts?: { hideAdministration?: boolean },
 ): SidebarGroupDto[] {
   return groups
+    .filter((group) => !(opts?.hideAdministration && isAdministrationMenuGroup(group.code)))
     .map((group) => ({
       ...group,
       menus: filterMenusForFeatures(group.menus, enabledFeatures),
@@ -152,74 +147,41 @@ function SidebarMenuLinks({
   );
 }
 
-function ProjectMenuGroups({
-  groups,
-  slug,
+function PlatformAdministrationNav({
   enabledFeatures,
-  onOpenMenu,
 }: {
-  groups: SidebarGroupDto[];
-  slug: string;
   enabledFeatures: string[];
-  onOpenMenu: (slug: string, appPath: string) => void;
 }) {
-  const visible = useMemo(
-    () => filterGroupsForFeatures(groups, enabledFeatures),
-    [groups, enabledFeatures],
+  const items = useMemo(
+    () => platformAdministrationMenusForFeatures(enabledFeatures),
+    [enabledFeatures],
   );
-  const hrefFor = useMemo(() => (appPath: string) => resolveAppHref(appPath, slug), [slug]);
 
-  if (visible.length === 0) {
-    return <p className="muted tiny nav-empty">No menus yet</p>;
-  }
+  if (items.length === 0) return null;
 
   return (
-    <>
-      {visible.map((group) => {
-        if (group.isOuter || group.code === '_OUTER') {
-          return (
-            <div key={group.id} className="nav-group outer">
-              <div className="nav-group-items">
-                <SidebarMenuLinks
-                  menus={group.menus}
-                  hrefFor={hrefFor}
-                  onNavigate={(path) => onOpenMenu(slug, path)}
-                />
-              </div>
-            </div>
-          );
-        }
-        return (
-          <div key={group.id} className="nav-group open">
-            <div className="nav-project-menu-label">{group.name}</div>
-            <div className="nav-group-items">
-              <SidebarMenuLinks
-                menus={group.menus}
-                hrefFor={hrefFor}
-                onNavigate={(path) => onOpenMenu(slug, path)}
-              />
-            </div>
-          </div>
-        );
-      })}
-    </>
+    <div className="nav-section admin-nav">
+      <div className="nav-section-label">Administration</div>
+      {items.map((item) => (
+        <NavLink key={`${item.featureId}:${item.path}`} to={item.path} end={item.path === '/app'}>
+          <span>{item.label}</span>
+        </NavLink>
+      ))}
+    </div>
   );
 }
 
-function ProjectsSidebarTree({
+/** Configure System: flat project list only — no nested project menus/submenus. */
+function ProjectsSidebarList({
   projects,
   loading,
-  openProjects,
-  toggleProject,
-  onOpenMenu,
   activeOrgId,
+  onSelectProject,
 }: {
-  projects: ProjectSidebarDto[];
+  projects: OrganizationDto[];
   loading: boolean;
-  openProjects: Record<string, boolean>;
-  toggleProject: (id: string) => void;
-  onOpenMenu: (organizationId: string, slug: string, appPath: string) => void;
   activeOrgId?: string | null;
+  onSelectProject: (organizationId: string) => void;
 }) {
   return (
     <div className="nav-section projects-nav">
@@ -228,49 +190,18 @@ function ProjectsSidebarTree({
         All projects
       </NavLink>
       {loading && projects.length === 0 && <p className="muted tiny">Loading projects…</p>}
-      {projects.map((project) => {
-        const open = openProjects[project.organizationId] ?? project.organizationId === activeOrgId;
-        return (
-          <div
-            key={project.organizationId}
-            className={`nav-group nav-project ${open ? 'open' : 'collapsed'}`}
-          >
-            <button
-              type="button"
-              className="nav-group-toggle nav-project-toggle"
-              aria-expanded={open}
-              onClick={() => toggleProject(project.organizationId)}
-            >
-              <span>{project.name}</span>
-              <svg
-                className="nav-group-caret"
-                width="14"
-                height="14"
-                viewBox="0 0 20 20"
-                fill="none"
-                aria-hidden
-              >
-                <path
-                  d="M5 7.5 10 12.5 15 7.5"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-            {open && (
-              <div className="nav-group-items nav-project-menus">
-                <ProjectMenuGroups
-                  groups={project.groups}
-                  slug={project.slug}
-                  enabledFeatures={project.enabledFeatures}
-                  onOpenMenu={(slug, path) => onOpenMenu(project.organizationId, slug, path)}
-                />
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {projects.map((project) => (
+        <NavLink
+          key={project.id}
+          to={`/app/projects/${project.id}/settings`}
+          className={({ isActive }) =>
+            `nav-project-link${isActive || activeOrgId === project.id ? ' active' : ''}`
+          }
+          onClick={() => onSelectProject(project.id)}
+        >
+          <span>{project.name}</span>
+        </NavLink>
+      ))}
       {!loading && projects.length === 0 && (
         <p className="muted tiny nav-empty">No projects yet</p>
       )}
@@ -280,15 +211,15 @@ function ProjectsSidebarTree({
 
 export function AppShell() {
   const { user, logout } = useAuth();
-  const { organizations, currentOrg, selectOrg } = useOrg();
-  const { sidebar, loading, projectSidebars, projectSidebarsLoading } = useIam();
+  const { organizations, currentOrg, selectOrg, loading: orgsLoading } = useOrg();
+  const { enabledFeatures: platformEnabledFeatures } = usePlatformConfig();
+  const { sidebar, loading } = useIam();
   const { projectSlug: routeSlug } = useParams<{ projectSlug?: string }>();
   const projectSlug = routeSlug?.trim() || currentOrg?.slug?.trim() || null;
   const [unread, setUnread] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(loadOpenGroups);
-  const [openProjects, setOpenProjects] = useState<Record<string, boolean>>(loadOpenProjects);
   const menuRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -297,19 +228,26 @@ export function AppShell() {
   const workspaceTheme = isPlatformShell ? 'default' : (currentOrg?.theme ?? 'default');
   const themeId = useDocumentTheme(workspaceTheme);
   const themeMeta = useMemo(() => getProjectThemePreset(themeId), [themeId]);
-  const brandInitial = (currentOrg?.name?.trim().charAt(0) || 'E').toUpperCase();
-
-  const hrefFor = useMemo(
-    () => (appPath: string) => resolveAppHref(appPath, projectSlug),
-    [projectSlug],
-  );
+  const brandInitial = (currentOrg?.name?.trim().charAt(0) || 'C').toUpperCase();
 
   const enabledFeatures = currentOrg?.enabledFeatures ?? [];
+  const featureSubscriptions = currentOrg?.featureSubscriptions ?? [];
+  const adminNavFeatures = isPlatformShell ? platformEnabledFeatures : enabledFeatures;
+
+  const hrefFor = useMemo(
+    () => (appPath: string) => {
+      const gated = resolveFeatureNavAppPath(appPath, enabledFeatures, featureSubscriptions);
+      return resolveAppHref(gated, projectSlug);
+    },
+    [projectSlug, enabledFeatures, featureSubscriptions],
+  );
 
   const visibleGroups = useMemo(() => {
     if (!sidebar?.groups) return [];
-    return filterGroupsForFeatures(sidebar.groups, enabledFeatures);
-  }, [sidebar?.groups, enabledFeatures]);
+    return filterGroupsForFeatures(sidebar.groups, enabledFeatures, {
+      hideAdministration: !isPlatformShell,
+    });
+  }, [sidebar?.groups, enabledFeatures, isPlatformShell]);
 
   useEffect(() => {
     const activeGroup = visibleGroups.find(
@@ -327,16 +265,6 @@ export function AppShell() {
     });
   }, [location.pathname, visibleGroups, hrefFor]);
 
-  useEffect(() => {
-    if (!currentOrg?.id || !isPlatformShell) return;
-    setOpenProjects((prev) => {
-      if (prev[currentOrg.id] === true) return prev;
-      const next = { ...prev, [currentOrg.id]: true };
-      localStorage.setItem(SIDEBAR_OPEN_PROJECTS_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, [currentOrg?.id, isPlatformShell]);
-
   function toggleGroup(groupId: string) {
     setOpenGroups((prev) => {
       const next = { ...prev, [groupId]: !(prev[groupId] ?? true) };
@@ -345,22 +273,8 @@ export function AppShell() {
     });
   }
 
-  function toggleProject(projectId: string) {
-    setOpenProjects((prev) => {
-      const currentlyOpen = prev[projectId] ?? projectId === currentOrg?.id;
-      const next = { ...prev, [projectId]: !currentlyOpen };
-      localStorage.setItem(SIDEBAR_OPEN_PROJECTS_KEY, JSON.stringify(next));
-      return next;
-    });
-  }
-
   function isGroupOpen(groupId: string) {
     return openGroups[groupId] ?? true;
-  }
-
-  function onOpenProjectMenu(organizationId: string, slug: string, appPath: string) {
-    selectOrg(organizationId);
-    navigate(resolveAppHref(appPath, slug));
   }
 
   useEffect(() => {
@@ -429,8 +343,8 @@ export function AppShell() {
         <div className="sidebar-brand">
           {isPlatformShell ? (
             <Link to="/app/projects" className="brand-mark compact">
-              <span className="brand-badge">E</span>
-              Enterprise Builder
+              <span className="brand-badge">C</span>
+              Configure System
             </Link>
           ) : (
             <Link to={hrefFor('/app')} className="brand-mark compact">
@@ -450,14 +364,15 @@ export function AppShell() {
 
         <nav>
           {isPlatformShell ? (
-            <ProjectsSidebarTree
-              projects={projectSidebars}
-              loading={projectSidebarsLoading}
-              openProjects={openProjects}
-              toggleProject={toggleProject}
-              onOpenMenu={onOpenProjectMenu}
-              activeOrgId={currentOrg?.id}
-            />
+            <>
+              <PlatformAdministrationNav enabledFeatures={adminNavFeatures} />
+              <ProjectsSidebarList
+                projects={organizations}
+                loading={orgsLoading}
+                activeOrgId={currentOrg?.id}
+                onSelectProject={selectOrg}
+              />
+            </>
           ) : (
             <>
               {loading && <p className="muted tiny">Loading menus…</p>}

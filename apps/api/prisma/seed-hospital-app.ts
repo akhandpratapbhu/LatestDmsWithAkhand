@@ -34,7 +34,11 @@ const REQUIRED_FEATURES = [
   'calls',
   'login-page',
   'menu-builder',
+  'features',
 ] as const;
+
+/** Premium features pre-subscribed for the hospital demo so Chat/Calls work out of the box. */
+const REQUIRED_SUBSCRIPTIONS = ['chat', 'calls'] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TenantDb = any;
@@ -640,15 +644,32 @@ function slugifyResource(label: string): string {
 async function ensureFeatures(platform: PrismaClient, orgId: string, current: unknown) {
   const existing = Array.isArray(current) ? (current as string[]) : [];
   const merged = Array.from(new Set([...existing, ...REQUIRED_FEATURES]));
-  if (merged.length === existing.length && REQUIRED_FEATURES.every((f) => existing.includes(f))) {
-    console.log('  Features already include Phase-1 set');
+
+  const org = await platform.organization.findUnique({
+    where: { id: orgId },
+    select: { featureSubscriptions: true },
+  });
+  const existingSubs = Array.isArray(org?.featureSubscriptions)
+    ? (org!.featureSubscriptions as string[])
+    : [];
+  const mergedSubs = Array.from(new Set([...existingSubs, ...REQUIRED_SUBSCRIPTIONS]));
+
+  const featuresOk =
+    merged.length === existing.length && REQUIRED_FEATURES.every((f) => existing.includes(f));
+  const subsOk =
+    mergedSubs.length === existingSubs.length &&
+    REQUIRED_SUBSCRIPTIONS.every((f) => existingSubs.includes(f));
+
+  if (featuresOk && subsOk) {
+    console.log('  Features + subscriptions already include Phase-1 set (incl. login-page)');
     return;
   }
   await platform.organization.update({
     where: { id: orgId },
-    data: { enabledFeatures: merged },
+    data: { enabledFeatures: merged, featureSubscriptions: mergedSubs },
   });
   console.log(`  enabledFeatures → ${merged.join(', ')}`);
+  console.log(`  featureSubscriptions → ${mergedSubs.join(', ')}`);
 }
 
 async function upsertForm(platform: PrismaClient, organizationId: string, def: FormDef) {
@@ -937,9 +958,10 @@ async function grantAdminFullAccess(db: TenantDb, organizationId: string) {
 async function reorderPlatformGroups(db: TenantDb, organizationId: string) {
   const updates: Array<[string, number]> = [
     ['MAIN', 1],
-    ['ACCESS', 20],
-    ['CONFIG', 21],
-    ['GOVERNANCE', 22],
+    ['ADMINISTRATION', 20],
+    ['GOVERNANCE', 21],
+    ['ACCESS', 98],
+    ['CONFIG', 99],
   ];
   for (const [code, sortOrder] of updates) {
     await db.menuGroup.updateMany({

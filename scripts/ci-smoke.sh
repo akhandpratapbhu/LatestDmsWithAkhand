@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:3000/api/v1}"
-EMAIL="ci-$(date +%s)@dms.local"
+EMAIL="ci-$(date +%s)@configure.local"
 PASSWORD="Password1"
 
 echo "==> Health"

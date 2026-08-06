@@ -1,15 +1,15 @@
-# Enterprise Builder
+# Configure System (Enterprise Builder architecture)
 
-Evolve **fullcursorDMS** in-place into a metadata-driven **Enterprise Builder** platform: reuse auth, org guard, forms, grids, IAM, dashboards, and audit; introduce a Platform shell and **Project** model, with **real per-project Postgres databases** for Access Management.
+Evolve this monorepo in-place into a metadata-driven **Configure System** platform: reuse auth, org guard, forms, grids, IAM, dashboards, and audit; introduce a Platform shell and **Project** model, with **real per-project Postgres databases** for Access Management.
 
 ## Decision
 
 | Choice | Detail |
 | --- | --- |
 | Approach | Evolve the existing monorepo (not a greenfield rewrite) |
-| Product name | **Project** = UX/API product name for existing `Organization` |
+| Product name | **Configure System** — **Project** = UX/API name for existing `Organization` |
 | DB table | Keep `organizations` (avoid risky rename migration) |
-| Platform DB | `DATABASE_URL` / typically `dms` on `:5435` |
+| Platform DB | `DATABASE_URL` / typically `configure_system` on `:5435` |
 | Project DB | One Postgres DB per project (`databaseName` / `connectionString`) |
 
 ## Two-database tenancy (current)
@@ -25,7 +25,7 @@ User → Platform Shell → Projects list / Features / Create Project  (platform
 Stores **only** (for tenancy purposes):
 
 - Platform users + auth (sessions, refresh tokens, login history)
-- Organization / Project metadata (name, logo, status, theme, `databaseName`, `connectionString`, `enabledFeatures`, …)
+- Organization / Project metadata (name, logo, status, theme, `databaseName`, `connectionString`, `enabledFeatures`, `featureSubscriptions`, …)
 - `OrganizationMember` — who may **open** which projects
 - Still-shared business tables: Forms, Grids, Chat, Calls, Masters, Notifications, Audit (scoped by `organizationId`)
 
@@ -47,19 +47,20 @@ Prisma clients:
 
 Runtime switching: `ProjectDbService.getClient(orgId)` caches a `PrismaClient` per `connectionString`. IAM, Users (list/create inside project), and Login page config prefer the project client when available; otherwise they fall back to the platform DB (legacy orgs).
 
-## What maps from DMS today
+## Concept map
 
-| DMS concept | Enterprise Builder |
+| Legacy concept | Configure System |
 | --- | --- |
 | Organization | **Project** (tenant / product instance) |
 | Org switcher | Project switcher |
 | Organization settings page | Projects list + Create Project wizard + project settings |
 | Forms / Grids builders | Form / Grid engines (still platform DB + orgId for now) |
 | IAM menus / roles / permissions | **Project DB** when provisioned |
-| Feature marketplace | `enabledFeatures[]` on org (platform) filters AppShell menus |
-| Login page settings | **Project DB** `LoginPageConfig` at `/{slug}/settings/login` |
+| Feature marketplace | `enabledFeatures[]` (installed) + `featureSubscriptions[]` (premium unlock) on org; AppShell filters menus by install; Chat/Calls route to subscribe until granted |
+| Login page settings | **Project DB** `LoginPageConfig` at `/{slug}/settings/login` (visible under project **Configuration** when `login-page` is installed; default on new projects) |
 | Project public login | `/:projectSlug/login` (slug, code, or subdomain); after login → `/{slug}/dashboard`. Preview from Login page settings. Legacy `/p/:slug/login` redirects. |
 | Project workspace URLs | After project login, in-app pages live under `/{slug}/…` (e.g. `/{slug}/users`, `/{slug}/features`). Platform Project Dashboard stays at `/app/projects`. |
+| Platform vs project IA | `/app/*` shows **Administration** above **Projects**. Project `/{slug}` hides the Administration group; keeps Access / Configuration / domain menus. |
 
 ## Project themes
 
@@ -67,10 +68,10 @@ Each project stores `Organization.theme` (platform DB) and optional `LoginPageCo
 
 | Preset | Feel |
 | --- | --- |
-| `default` | Enterprise Builder — teal accent, neutral chrome |
+| `default` | Configure System — teal accent, neutral chrome |
 | `hospital` | Clinical whites, medical teal, calm trust |
 | `school` | Academic navy + warm gold |
-| `dms` (`dealer` / `mahindra` aliases) | Charcoal industrial, steel blue + amber |
+| `dms` (`dealer` / `mahindra` aliases; theme id kept) | Charcoal industrial, steel blue + amber |
 
 On `/{slug}/…` and `/{slug}/login`, the web app sets `data-theme` + CSS variables on `document.documentElement` (platform `/app/*` stays `default`). Create Project / Project settings / Login page settings expose the preset dropdown. Seeds set hospital → `hospital`, school → `school`, Mahindra → `dms`.
 
@@ -79,13 +80,14 @@ On `/{slug}/…` and `/{slug}/login`, the web app sets `data-theme` + CSS variab
 | Area | Behavior |
 | --- | --- |
 | Project Dashboard | Cards from platform org metadata |
-| Add Project wizard | Metadata + `databaseName`; creates platform membership (OWNER) |
-| DB provisioning | `CREATE DATABASE` → `prisma db push` (project schema) → seed IAM + LoginPageConfig + project admin user; stores `connectionString` |
-| Open project | Platform membership check; IAM/Users/Login page read/write **project DB** |
-| Feature marketplace | Install/uninstall updates platform `enabledFeatures`; sidebar filtered by catalog paths |
+| Add Project wizard | Metadata + `databaseName` + **project admin** (name, email, password); creates exactly one `OrganizationMember` OWNER + project-DB user with IAM `ADMIN`; returns credentials once |
+| DB provisioning | `CREATE DATABASE` → `prisma db push` (project schema) → seed IAM + LoginPageConfig + **that** project admin user; stores `connectionString` |
+| Open project | Platform membership check (or platform-admin bypass); IAM/Users/Login page read/write **project DB** |
+| Feature marketplace | Install/uninstall updates `enabledFeatures`; premium features (chat, calls) also need `featureSubscriptions` (mock checkout or admin grant). Default install on create: `dashboard`, `users`, `roles`, `login-page` only. |
 | Forms / Grids / Chat | Still platform DB + `organizationId` (documented follow-up) |
 | **Menu Builder** | `/{slug}/menus` — create parent/submenu hierarchy; link a Dynamic Form via `Menu.formId` |
 | **Form-linked nav** | Sidebar item with `formId` opens `/{slug}/data/:formId` records grid; **Add** creates a submission |
+| **Subscription paywall** | `/{slug}/features/subscribe/:code` — mock Stripe checkout; unlocks premium feature for that project |
 
 ### Form → Menu → Grid flow
 
@@ -95,15 +97,30 @@ On `/{slug}/…` and `/{slug}/login`, the web app sets `data-theme` + CSS variab
 
 Menus with `formId` use path `/app/data/:formId` (resolved to `/{slug}/data/:formId`). Parent menus may omit `path` and act as folders. `/app/data/*` is allowed when the **forms** feature is installed; Menu Builder is the **menu-builder** feature.
 
+## Project admin (one per new project)
+
+On **Create Project** (`POST /organizations`), platform Configure System admins must supply a **project admin** (`adminFirstName`, `adminLastName`, `adminEmail`, optional `adminPassword`):
+
+1. Create (or reuse) **one** platform `User` for that email — never add the platform operator as a member.
+2. Create `Organization` with `ownerId` = that user and **exactly one** `OrganizationMember` (`OWNER`).
+3. Provision project DB → upsert that user + OWNER membership → seed IAM (`ADMIN` + `MEMBER` roles, menus, permissions) and attach the owner to `ADMIN`.
+4. Default `enabledFeatures`: `dashboard`, `users`, `roles`, `login-page`. Project admin installs more later via Features.
+5. Response includes `projectAdmin` (email, password once, `loginUrl` = `/{slug}/login`).
+
+Hospital/school **demo seeds** may still create multiple users; the one-admin rule applies to the create-project wizard/API path only.
+
+Platform admins list all projects on `/app/projects` without membership. Day-to-day roles/users/permissions/features are managed by the project admin inside `/{slug}/…` (Access + Configuration menus — no platform Administration group).
+
 ## How to test
 
-Prerequisites: Postgres via docker-compose (`dms` user can `CREATE DATABASE`), `DATABASE_URL` pointing at it, API + web running.
+Prerequisites: Postgres via docker-compose (`configure` DB role can `CREATE DATABASE`), `DATABASE_URL` pointing at `configure_system`, API + web running.
 
 1. **Login platform** → land on Projects dashboard (platform DB).
-2. **Create project** → check API response `databaseProvisioned: true`; on Postgres: `\l` should list `{databaseName}`; org row has `connectionString`.
-3. **Open project** → enter `/{slug}/dashboard`; Users / IAM / Login page (`/{slug}/settings/login`) mutate the **project** database (not `dms` IAM tables for that org’s runtime path).
-4. **Hospital (or any) project login** → Open `/{slug}/login` (e.g. `/hospital-management/login`) → after sign-in land on `/{slug}/dashboard`. Or from Login page settings → **Preview login page**.
-5. **Features** → install/uninstall updates platform `enabledFeatures`; menus for installed features appear when present in project DB menus.
+2. **Create project** → fill project admin name/email/password → check API response `databaseProvisioned: true` and `projectAdmin.loginUrl`; on Postgres: `\l` should list `{databaseName}`; org has **one** OWNER member (the project admin).
+3. **Login as project admin** → open `/{slug}/login` with those credentials → manage Users, Identity & Access, Features.
+4. **Open project (platform)** → enter `/{slug}/dashboard` as platform admin (bypass) or as project admin; Users / IAM / Login page mutate the **project** database.
+5. **Features** → install/uninstall updates platform `enabledFeatures`; menus for installed features appear when present in project DB menus. Premium features open `/{slug}/features/subscribe/:code` until subscribed.
+6. **Administration** → visible on `/app/projects` (platform shell) above Projects; **not** shown inside hospital/school/`/{slug}` workspaces. Login page lives under project **Configuration**.
 
 Commands:
 
@@ -139,4 +156,4 @@ Form / Grid / Workflow / Report builders against project data stores.
 
 ## Out of scope (this pass)
 
-Full workflow/report builders rewrite, billing, social login, subdomain DNS routing (path-based `/:slug/login` is supported).
+Full workflow/report builders rewrite, real Stripe billing (mock checkout + `featureSubscriptions` is in place), social login, subdomain DNS routing (path-based `/:slug/login` is supported).

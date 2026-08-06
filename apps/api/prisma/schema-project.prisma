@@ -263,6 +263,8 @@ model MenuGroup {
   code           String
   sortOrder      Int      @default(0)
   isActive       Boolean  @default(true)
+  /// When true, omit from Identity & Access permissions matrix (still in sidebar for admins).
+  excludeFromPermissions Boolean @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

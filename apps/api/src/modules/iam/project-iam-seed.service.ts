@@ -16,6 +16,7 @@ const DEFAULT_PERMISSIONS: SeedPerm[] = [
   { code: 'menu.iam', name: 'IAM menu', type: 'MENU' },
   { code: 'menu.dashboards', name: 'Reports menu', type: 'MENU' },
   { code: 'menu.forms', name: 'Forms menu', type: 'MENU' },
+  { code: 'menu.features', name: 'Features menu', type: 'MENU' },
   { code: 'menu.grids', name: 'Grids menu', type: 'MENU' },
   { code: 'menu.menus', name: 'Menus menu', type: 'MENU' },
   { code: 'menu.notifications', name: 'Notifications menu', type: 'MENU' },
@@ -33,6 +34,7 @@ const DEFAULT_PERMISSIONS: SeedPerm[] = [
   { code: 'screen.iam', name: 'IAM screen', type: 'SCREEN', resource: 'iam', action: 'manage' },
   { code: 'screen.dashboards', name: 'Reports builder', type: 'SCREEN', resource: 'dashboards', action: 'manage' },
   { code: 'screen.forms', name: 'Form builder', type: 'SCREEN', resource: 'forms', action: 'manage' },
+  { code: 'screen.features', name: 'Features marketplace', type: 'SCREEN', resource: 'features', action: 'manage' },
   { code: 'screen.grids', name: 'Grid builder', type: 'SCREEN', resource: 'grids', action: 'manage' },
   { code: 'screen.menus', name: 'Menu builder', type: 'SCREEN', resource: 'menus', action: 'manage' },
   { code: 'screen.notifications', name: 'Notifications screen', type: 'SCREEN', resource: 'notifications', action: 'manage' },
@@ -132,14 +134,38 @@ export class ProjectIamSeedService {
       const mainGroup = await tx.menuGroup.create({
         data: { organizationId, name: 'Workspace', code: 'MAIN', sortOrder: 1 },
       });
+      // Project-local access (Users / IAM) — not platform Administration
       const accessGroup = await tx.menuGroup.create({
-        data: { organizationId, name: 'Access Control', code: 'ACCESS', sortOrder: 2 },
+        data: {
+          organizationId,
+          name: 'Access',
+          code: 'ACCESS',
+          sortOrder: 17,
+          excludeFromPermissions: true,
+        },
       });
+      // Project Configuration (Features, builders, Login page)
       const configGroup = await tx.menuGroup.create({
-        data: { organizationId, name: 'Configuration', code: 'CONFIG', sortOrder: 3 },
+        data: {
+          organizationId,
+          name: 'Configuration',
+          code: 'CONFIGURATION',
+          sortOrder: 18,
+          excludeFromPermissions: true,
+        },
+      });
+      // Platform-only Administration (Projects). Hidden inside `/{slug}` by AppShell.
+      const adminGroup = await tx.menuGroup.create({
+        data: {
+          organizationId,
+          name: 'Administration',
+          code: 'ADMINISTRATION',
+          sortOrder: 20,
+          excludeFromPermissions: true,
+        },
       });
       const governanceGroup = await tx.menuGroup.create({
-        data: { organizationId, name: 'Governance / Compliance', code: 'GOVERNANCE', sortOrder: 4 },
+        data: { organizationId, name: 'Governance / Compliance', code: 'GOVERNANCE', sortOrder: 21 },
       });
 
       const menuDefs: Array<{
@@ -147,24 +173,25 @@ export class ProjectIamSeedService {
         path: string;
         icon: string;
         groupId: string;
+        parentId?: string;
         permissionCode: string;
         sortOrder: number;
         isActive?: boolean;
       }> = [
         { label: 'Dashboard', path: '/app', icon: 'home', groupId: mainGroup.id, permissionCode: 'menu.overview', sortOrder: 1 },
-        { label: 'Projects', path: '/app/projects', icon: 'building', groupId: accessGroup.id, permissionCode: 'menu.organization', sortOrder: 1 },
-        { label: 'Features', path: '/app/features', icon: 'form', groupId: configGroup.id, permissionCode: 'menu.forms', sortOrder: 0 },
-        { label: 'Users', path: '/app/users', icon: 'users', groupId: accessGroup.id, permissionCode: 'menu.users', sortOrder: 2 },
-        { label: 'Identity & Access', path: '/app/iam', icon: 'key', groupId: accessGroup.id, permissionCode: 'menu.iam', sortOrder: 3 },
-        { label: 'Login page', path: '/app/settings/login', icon: 'user', groupId: configGroup.id, permissionCode: 'menu.login', sortOrder: 6 },
-        { label: 'Forms', path: '/app/forms', icon: 'form', groupId: configGroup.id, permissionCode: 'menu.forms', sortOrder: 2 },
-        { label: 'Menus', path: '/app/menus', icon: 'menu', groupId: configGroup.id, permissionCode: 'menu.menus', sortOrder: 3 },
-        { label: 'Grids', path: '/app/grids', icon: 'table', groupId: configGroup.id, permissionCode: 'menu.grids', sortOrder: 4 },
-        { label: 'Dashboard Builder', path: '/app/dashboards', icon: 'layout', groupId: configGroup.id, permissionCode: 'menu.dashboards', sortOrder: 5 },
         { label: 'Sessions', path: '/app/sessions', icon: 'shield', groupId: mainGroup.id, permissionCode: 'menu.sessions', sortOrder: 2 },
         { label: 'Chat', path: '/app/chat', icon: 'chat', groupId: mainGroup.id, permissionCode: 'menu.chat', sortOrder: 3 },
         { label: 'Calls history', path: '/app/calls', icon: 'phone', groupId: mainGroup.id, permissionCode: 'menu.calls', sortOrder: 4 },
         { label: 'Activity', path: '/app/activity', icon: 'activity', groupId: mainGroup.id, permissionCode: 'menu.activity', sortOrder: 5 },
+        { label: 'Users', path: '/app/users', icon: 'users', groupId: accessGroup.id, permissionCode: 'menu.users', sortOrder: 1 },
+        { label: 'Identity & Access', path: '/app/iam', icon: 'key', groupId: accessGroup.id, permissionCode: 'menu.iam', sortOrder: 2 },
+        { label: 'Features', path: '/app/features', icon: 'form', groupId: configGroup.id, permissionCode: 'menu.features', sortOrder: 0 },
+        { label: 'Forms', path: '/app/forms', icon: 'form', groupId: configGroup.id, permissionCode: 'menu.forms', sortOrder: 2 },
+        { label: 'Menus', path: '/app/menus', icon: 'menu', groupId: configGroup.id, permissionCode: 'menu.menus', sortOrder: 3 },
+        { label: 'Grids', path: '/app/grids', icon: 'table', groupId: configGroup.id, permissionCode: 'menu.grids', sortOrder: 4 },
+        { label: 'Dashboard Builder', path: '/app/dashboards', icon: 'layout', groupId: configGroup.id, permissionCode: 'menu.dashboards', sortOrder: 5 },
+        { label: 'Login page', path: '/app/settings/login', icon: 'user', groupId: configGroup.id, permissionCode: 'menu.login', sortOrder: 6 },
+        { label: 'Projects', path: '/app/projects', icon: 'building', groupId: adminGroup.id, permissionCode: 'menu.organization', sortOrder: 1 },
         { label: 'Audit', path: '/app/audit', icon: 'audit', groupId: governanceGroup.id, permissionCode: 'menu.audit', sortOrder: 1 },
         { label: 'Search', path: '/app/search', icon: 'search', groupId: mainGroup.id, permissionCode: 'menu.search', sortOrder: 90, isActive: false },
         { label: 'Notifications', path: '/app/notifications', icon: 'bell', groupId: mainGroup.id, permissionCode: 'menu.notifications', sortOrder: 91, isActive: false },
@@ -177,6 +204,7 @@ export class ProjectIamSeedService {
           data: {
             organizationId,
             groupId: m.groupId,
+            parentId: m.parentId,
             label: m.label,
             path: m.path,
             icon: m.icon,
@@ -314,25 +342,73 @@ export class ProjectIamSeedService {
   }
 
   async syncMenuLayout(client: ProjectPrismaClient, organizationId: string): Promise<void> {
-    const ensureGroup = async (code: string, name: string, sortOrder: number) => {
+    const ensureGroup = async (
+      code: string,
+      name: string,
+      sortOrder: number,
+      extra?: { excludeFromPermissions?: boolean; isActive?: boolean },
+    ) => {
       const existing = await client.menuGroup.findFirst({
         where: { organizationId, code },
       });
       if (existing) {
         return client.menuGroup.update({
           where: { id: existing.id },
-          data: { name, sortOrder, isActive: true },
+          data: {
+            name,
+            sortOrder,
+            isActive: extra?.isActive ?? true,
+            ...(extra?.excludeFromPermissions !== undefined
+              ? { excludeFromPermissions: extra.excludeFromPermissions }
+              : {}),
+          },
         });
       }
       return client.menuGroup.create({
-        data: { organizationId, name, code, sortOrder, isActive: true },
+        data: {
+          organizationId,
+          name,
+          code,
+          sortOrder,
+          isActive: extra?.isActive ?? true,
+          excludeFromPermissions: extra?.excludeFromPermissions ?? false,
+        },
       });
     };
 
     const mainGroup = await ensureGroup('MAIN', 'Workspace', 1);
-    const accessGroup = await ensureGroup('ACCESS', 'Access Control', 2);
-    const configGroup = await ensureGroup('CONFIG', 'Configuration', 3);
-    const governanceGroup = await ensureGroup('GOVERNANCE', 'Governance / Compliance', 4);
+    // Project-local groups (visible inside `/{slug}`)
+    const accessGroup = await ensureGroup('ACCESS', 'Access', 17, {
+      excludeFromPermissions: true,
+    });
+    const configGroup = await ensureGroup('CONFIGURATION', 'Configuration', 18, {
+      excludeFromPermissions: true,
+    });
+    // Platform-only Administration — hidden inside project workspaces by AppShell
+    const adminGroup = await ensureGroup('ADMINISTRATION', 'Administration', 20, {
+      excludeFromPermissions: true,
+    });
+    const governanceGroup = await ensureGroup('GOVERNANCE', 'Governance / Compliance', 21);
+
+    await client.menuGroup.updateMany({
+      where: { organizationId, code: { in: ['CONFIG', 'ADMIN'] } },
+      data: { isActive: false, sortOrder: 99 },
+    });
+    await client.menuGroup.updateMany({
+      where: { organizationId, code: 'ADMIN' },
+      data: { name: 'Administration (legacy)' },
+    });
+
+    // Deactivate nested Access Control / Configuration section parents under Administration
+    await client.menu.updateMany({
+      where: {
+        organizationId,
+        groupId: adminGroup.id,
+        path: null,
+        label: { in: ['Access Control', 'Configuration'] },
+      },
+      data: { isActive: false },
+    });
 
     const menuLayout: Array<{
       path: string;
@@ -340,27 +416,28 @@ export class ProjectIamSeedService {
       icon: string;
       permissionCode: string;
       groupId: string;
+      parentId: string | null;
       sortOrder: number;
       isActive?: boolean;
     }> = [
-      { path: '/app', label: 'Dashboard', icon: 'home', permissionCode: 'menu.overview', groupId: mainGroup.id, sortOrder: 1 },
-      { path: '/app/projects', label: 'Projects', icon: 'building', permissionCode: 'menu.organization', groupId: accessGroup.id, sortOrder: 1 },
-      { path: '/app/features', label: 'Features', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 0 },
-      { path: '/app/users', label: 'Users', icon: 'users', permissionCode: 'menu.users', groupId: accessGroup.id, sortOrder: 2 },
-      { path: '/app/iam', label: 'Identity & Access', icon: 'key', permissionCode: 'menu.iam', groupId: accessGroup.id, sortOrder: 3 },
-      { path: '/app/settings/login', label: 'Login page', icon: 'user', permissionCode: 'menu.login', groupId: configGroup.id, sortOrder: 6 },
-      { path: '/app/forms', label: 'Forms', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, sortOrder: 2 },
-      { path: '/app/menus', label: 'Menus', icon: 'menu', permissionCode: 'menu.menus', groupId: configGroup.id, sortOrder: 3 },
-      { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: configGroup.id, sortOrder: 4 },
-      { path: '/app/dashboards', label: 'Dashboard Builder', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, sortOrder: 5 },
-      { path: '/app/sessions', label: 'Sessions', icon: 'shield', permissionCode: 'menu.sessions', groupId: mainGroup.id, sortOrder: 2 },
-      { path: '/app/chat', label: 'Chat', icon: 'chat', permissionCode: 'menu.chat', groupId: mainGroup.id, sortOrder: 3 },
-      { path: '/app/calls', label: 'Calls history', icon: 'phone', permissionCode: 'menu.calls', groupId: mainGroup.id, sortOrder: 4 },
-      { path: '/app/activity', label: 'Activity', icon: 'activity', permissionCode: 'menu.activity', groupId: mainGroup.id, sortOrder: 5 },
-      { path: '/app/audit', label: 'Audit', icon: 'audit', permissionCode: 'menu.audit', groupId: governanceGroup.id, sortOrder: 1 },
-      { path: '/app/search', label: 'Search', icon: 'search', permissionCode: 'menu.search', groupId: mainGroup.id, sortOrder: 90, isActive: false },
-      { path: '/app/notifications', label: 'Notifications', icon: 'bell', permissionCode: 'menu.notifications', groupId: mainGroup.id, sortOrder: 91, isActive: false },
-      { path: '/app/profile', label: 'Profile', icon: 'user', permissionCode: 'menu.profile', groupId: mainGroup.id, sortOrder: 92, isActive: false },
+      { path: '/app', label: 'Dashboard', icon: 'home', permissionCode: 'menu.overview', groupId: mainGroup.id, parentId: null, sortOrder: 1 },
+      { path: '/app/sessions', label: 'Sessions', icon: 'shield', permissionCode: 'menu.sessions', groupId: mainGroup.id, parentId: null, sortOrder: 2 },
+      { path: '/app/chat', label: 'Chat', icon: 'chat', permissionCode: 'menu.chat', groupId: mainGroup.id, parentId: null, sortOrder: 3 },
+      { path: '/app/calls', label: 'Calls history', icon: 'phone', permissionCode: 'menu.calls', groupId: mainGroup.id, parentId: null, sortOrder: 4 },
+      { path: '/app/activity', label: 'Activity', icon: 'activity', permissionCode: 'menu.activity', groupId: mainGroup.id, parentId: null, sortOrder: 5 },
+      { path: '/app/users', label: 'Users', icon: 'users', permissionCode: 'menu.users', groupId: accessGroup.id, parentId: null, sortOrder: 1 },
+      { path: '/app/iam', label: 'Identity & Access', icon: 'key', permissionCode: 'menu.iam', groupId: accessGroup.id, parentId: null, sortOrder: 2 },
+      { path: '/app/features', label: 'Features', icon: 'form', permissionCode: 'menu.features', groupId: configGroup.id, parentId: null, sortOrder: 0 },
+      { path: '/app/forms', label: 'Forms', icon: 'form', permissionCode: 'menu.forms', groupId: configGroup.id, parentId: null, sortOrder: 2 },
+      { path: '/app/menus', label: 'Menus', icon: 'menu', permissionCode: 'menu.menus', groupId: configGroup.id, parentId: null, sortOrder: 3 },
+      { path: '/app/grids', label: 'Grids', icon: 'table', permissionCode: 'menu.grids', groupId: configGroup.id, parentId: null, sortOrder: 4 },
+      { path: '/app/dashboards', label: 'Dashboard Builder', icon: 'layout', permissionCode: 'menu.dashboards', groupId: configGroup.id, parentId: null, sortOrder: 5 },
+      { path: '/app/settings/login', label: 'Login page', icon: 'user', permissionCode: 'menu.login', groupId: configGroup.id, parentId: null, sortOrder: 6 },
+      { path: '/app/projects', label: 'Projects', icon: 'building', permissionCode: 'menu.organization', groupId: adminGroup.id, parentId: null, sortOrder: 1 },
+      { path: '/app/audit', label: 'Audit', icon: 'audit', permissionCode: 'menu.audit', groupId: governanceGroup.id, parentId: null, sortOrder: 1 },
+      { path: '/app/search', label: 'Search', icon: 'search', permissionCode: 'menu.search', groupId: mainGroup.id, parentId: null, sortOrder: 90, isActive: false },
+      { path: '/app/notifications', label: 'Notifications', icon: 'bell', permissionCode: 'menu.notifications', groupId: mainGroup.id, parentId: null, sortOrder: 91, isActive: false },
+      { path: '/app/profile', label: 'Profile', icon: 'user', permissionCode: 'menu.profile', groupId: mainGroup.id, parentId: null, sortOrder: 92, isActive: false },
     ];
 
     // Ensure login permission exists for older project DBs
@@ -413,6 +490,31 @@ export class ProjectIamSeedService {
       });
     }
 
+    // Ensure Features marketplace permissions for older project DBs
+    const featuresPerm = await client.permission.findFirst({
+      where: { organizationId, code: 'menu.features' },
+    });
+    if (!featuresPerm) {
+      await client.permission.create({
+        data: {
+          organizationId,
+          code: 'menu.features',
+          name: 'Features menu',
+          type: 'MENU',
+        },
+      });
+      await client.permission.create({
+        data: {
+          organizationId,
+          code: 'screen.features',
+          name: 'Features marketplace',
+          type: 'SCREEN',
+          resource: 'features',
+          action: 'manage',
+        },
+      });
+    }
+
     const perms = await client.permission.findMany({ where: { organizationId } });
     const byCode = Object.fromEntries(perms.map((p) => [p.code, p.id]));
 
@@ -433,6 +535,7 @@ export class ProjectIamSeedService {
             label: m.label,
             icon: m.icon,
             groupId: m.groupId,
+            parentId: m.parentId,
             sortOrder: m.sortOrder,
             isActive: m.isActive ?? true,
             permissionId: byCode[m.permissionCode] ?? existing.permissionId,
@@ -443,6 +546,7 @@ export class ProjectIamSeedService {
           data: {
             organizationId,
             groupId: m.groupId,
+            parentId: m.parentId,
             label: m.label,
             path: m.path,
             icon: m.icon,
@@ -450,6 +554,28 @@ export class ProjectIamSeedService {
             isActive: m.isActive ?? true,
             permissionId: byCode[m.permissionCode],
           },
+        });
+      }
+    }
+
+    // Grant admin role access to any newly created menus under ACCESS / CONFIGURATION
+    const adminRole = await client.iamRole.findFirst({
+      where: { organizationId, code: 'ADMIN', isSystem: true },
+    });
+    if (adminRole) {
+      const projectMenus = await client.menu.findMany({
+        where: {
+          organizationId,
+          groupId: { in: [accessGroup.id, configGroup.id, adminGroup.id] },
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      for (const menu of projectMenus) {
+        await client.roleMenu.upsert({
+          where: { roleId_menuId: { roleId: adminRole.id, menuId: menu.id } },
+          create: { roleId: adminRole.id, menuId: menu.id },
+          update: {},
         });
       }
     }

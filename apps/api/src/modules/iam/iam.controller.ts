@@ -56,7 +56,7 @@ export class IamController {
     return this.iam.getSidebar(org.organizationId, user.userId);
   }
 
-  /** Menu trees for every project the user belongs to (platform DMS sidebar). */
+  /** Menu trees for every project the user belongs to (platform sidebar). */
   @Get('project-sidebars')
   @SkipOrg()
   projectSidebars(@CurrentUser() user: JwtPayloadUser) {
@@ -116,13 +116,16 @@ export class IamController {
   listMenuGroups(
     @CurrentOrg() org: OrgContext,
     @Query('organizationId') organizationId?: string,
+    @Query('forPermissions') forPermissions?: string,
   ) {
     if (organizationId && organizationId !== org.organizationId) {
       throw new BadRequestException(
         'organizationId query must match X-Organization-Id when both are sent',
       );
     }
-    return this.iam.listMenuGroups(org.organizationId);
+    const forPerms =
+      forPermissions === 'true' || forPermissions === '1' || forPermissions === 'yes';
+    return this.iam.listMenuGroups(org.organizationId, forPerms);
   }
 
   @Post('menu-groups')

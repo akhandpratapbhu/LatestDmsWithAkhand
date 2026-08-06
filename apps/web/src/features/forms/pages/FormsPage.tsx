@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { orgApi } from '../../../lib/api';
+import { useAuth } from '../../auth/auth-context';
 import { useOrg } from '../../org/org-context';
 import { useIam } from '../../iam/iam-context';
 import { PageHeader } from '../../../components/PageHeader';
@@ -40,8 +42,12 @@ type FormDetail = {
 };
 
 export function FormsPage() {
-  const { currentOrg } = useOrg();
+  const { user } = useAuth();
+  const { organizations, currentOrg, selectOrg } = useOrg();
   const { hasPermission } = useIam();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isPlatformForms = location.pathname.startsWith('/app/forms');
   const [forms, setForms] = useState<FormListItem[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState<FormDetail | null>(null);
@@ -59,10 +65,49 @@ export function FormsPage() {
     required: true,
   });
 
+  const canBuildForms =
+    user?.isPlatformAdmin ||
+    hasPermission('menu.forms') ||
+    hasPermission('screen.forms') ||
+    hasPermission('api.forms.write');
+
+  // Platform Configure System: honor ?projectId= and keep org header in sync.
+  useEffect(() => {
+    if (!isPlatformForms) return;
+    const fromQuery = searchParams.get('projectId')?.trim();
+    if (fromQuery && fromQuery !== currentOrg?.id) {
+      const exists = organizations.some((o) => o.id === fromQuery);
+      if (exists) selectOrg(fromQuery);
+      return;
+    }
+    if (!fromQuery && currentOrg?.id) {
+      const next = new URLSearchParams(searchParams);
+      next.set('projectId', currentOrg.id);
+      setSearchParams(next, { replace: true });
+    }
+  }, [isPlatformForms, searchParams, organizations, currentOrg?.id, selectOrg, setSearchParams]);
+
+  function onPlatformProjectChange(orgId: string) {
+    selectOrg(orgId);
+    setSelectedId('');
+    setDetail(null);
+    setForms([]);
+    setError(null);
+    setMessage(null);
+    const next = new URLSearchParams(searchParams);
+    if (orgId) next.set('projectId', orgId);
+    else next.delete('projectId');
+    setSearchParams(next, { replace: true });
+  }
+
   async function loadList() {
     const list = await orgApi<FormListItem[]>('/forms');
     setForms(list);
     if (!selectedId && list[0]) setSelectedId(list[0].id);
+    if (selectedId && !list.some((f) => f.id === selectedId)) {
+      setSelectedId(list[0]?.id ?? '');
+      setDetail(null);
+    }
   }
 
   async function loadDetail(id: string) {
@@ -195,7 +240,7 @@ export function FormsPage() {
     }
   }
 
-  if (!currentOrg) {
+  if (!currentOrg && !isPlatformForms) {
     return (
       <section className="panel">
         <h1>Forms</h1>
@@ -204,7 +249,7 @@ export function FormsPage() {
     );
   }
 
-  if (!hasPermission('menu.forms') && !hasPermission('screen.forms')) {
+  if (!canBuildForms) {
     return (
       <section className="panel">
         <h1>Forms</h1>
@@ -217,276 +262,336 @@ export function FormsPage() {
     <div>
       <PageHeader
         title="Dynamic Form Builder"
-        description="Create forms with tabs, sections, controls, validation, and layout."
+        description={
+          isPlatformForms
+            ? 'Configure forms for a selected project from Configure System. Forms stay scoped to that project.'
+            : 'Create forms with tabs, sections, controls, validation, and layout.'
+        }
       />
 
-      {error && <div className="alert error">{error}</div>}
-      {message && <div className="alert success">{message}</div>}
-
-      <section className="section-card">
-        <div className="section-card-body">
-      <form className="auth-form compact" onSubmit={(e) => void onCreateForm(e)}>
-        <h2>New form</h2>
-        <div className="row-2">
-          <label>
-            Name
-            <input
-              required
-              value={createForm.name}
-              onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </label>
-          <label>
-            Code
-            <input
-              required
-              value={createForm.code}
-              onChange={(e) => setCreateForm((f) => ({ ...f, code: e.target.value }))}
-            />
-          </label>
-        </div>
-        <label>
-          Layout
-          <select
-            value={createForm.layoutType}
-            onChange={(e) => setCreateForm((f) => ({ ...f, layoutType: e.target.value }))}
-          >
-            <option value="TABS">TABS</option>
-            <option value="GRID">GRID</option>
-            <option value="STACK">STACK</option>
-          </select>
-        </label>
-        <button className="btn primary" type="submit">
-          Create form
-        </button>
-      </form>
-
-      <label className="inline-field">
-        Edit form
-        <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-          {forms.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name} ({f.status})
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {detail && (
-        <>
-          <div className="action-row">
-            <button className="btn secondary" type="button" onClick={() => void publish()}>
-              Publish form
-            </button>
-            <span className="muted">
-              Layout: {detail.layoutType} · Tabs: {detail.tabs.length} · Sections:{' '}
-              {detail.sections.length}
-            </span>
+      {isPlatformForms ? (
+        <section className="section-card" style={{ marginBottom: '1rem' }}>
+          <div className="section-card-body">
+            <label className="inline-field">
+              Project
+              <select
+                value={currentOrg?.id ?? ''}
+                onChange={(e) => onPlatformProjectChange(e.target.value)}
+                aria-label="Select project for forms"
+              >
+                <option value="" disabled>
+                  Select a project…
+                </option>
+                {organizations.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                    {o.slug ? ` (${o.slug})` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="muted tiny" style={{ margin: '0.5rem 0 0' }}>
+              Forms are created for the selected project via <code>X-Organization-Id</code>. Open the
+              project workspace to use published forms with end users.
+            </p>
           </div>
+        </section>
+      ) : null}
 
-          <form className="auth-form compact" onSubmit={(e) => void addTab(e)}>
-            <h2>Add tab</h2>
-            <div className="row-2">
-              <label>
-                Name
-                <input
-                  required
-                  value={tabForm.name}
-                  onChange={(e) => setTabForm((f) => ({ ...f, name: e.target.value }))}
-                />
-              </label>
-              <label>
-                Code
-                <input
-                  required
-                  value={tabForm.code}
-                  onChange={(e) => setTabForm((f) => ({ ...f, code: e.target.value }))}
-                />
-              </label>
-            </div>
-            <button className="btn secondary" type="submit">
-              Add tab
-            </button>
-          </form>
+      {!currentOrg ? (
+        <section className="panel">
+          <p className="lede">Select a project above to manage its forms.</p>
+        </section>
+      ) : (
+        <>
+          {error && <div className="alert error">{error}</div>}
+          {message && <div className="alert success">{message}</div>}
 
-          <form className="auth-form compact" onSubmit={(e) => void addSection(e)}>
-            <h2>Add section</h2>
-            <div className="row-2">
-              <label>
-                Name
-                <input
-                  required
-                  value={sectionForm.name}
-                  onChange={(e) => setSectionForm((f) => ({ ...f, name: e.target.value }))}
-                />
-              </label>
-              <label>
-                Code
-                <input
-                  required
-                  value={sectionForm.code}
-                  onChange={(e) => setSectionForm((f) => ({ ...f, code: e.target.value }))}
-                />
-              </label>
-            </div>
-            <label>
-              Tab
-              <select
-                value={sectionForm.tabId}
-                onChange={(e) => setSectionForm((f) => ({ ...f, tabId: e.target.value }))}
-              >
-                <option value="">None</option>
-                {detail.tabs.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className="btn secondary" type="submit">
-              Add section
-            </button>
-          </form>
+          <section className="section-card">
+            <div className="section-card-body">
+              <form className="auth-form compact" onSubmit={(e) => void onCreateForm(e)}>
+                <h2>New form{isPlatformForms ? ` · ${currentOrg.name}` : ''}</h2>
+                <div className="row-2">
+                  <label>
+                    Name
+                    <input
+                      required
+                      value={createForm.name}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    Code
+                    <input
+                      required
+                      value={createForm.code}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, code: e.target.value }))}
+                    />
+                  </label>
+                </div>
+                <label>
+                  Layout
+                  <select
+                    value={createForm.layoutType}
+                    onChange={(e) => setCreateForm((f) => ({ ...f, layoutType: e.target.value }))}
+                  >
+                    <option value="TABS">TABS</option>
+                    <option value="GRID">GRID</option>
+                    <option value="STACK">STACK</option>
+                  </select>
+                </label>
+                <button className="btn primary" type="submit">
+                  Create form
+                </button>
+              </form>
 
-          <form className="auth-form compact" onSubmit={(e) => void addControl(e)}>
-            <h2>Add control</h2>
-            <label>
-              Section
-              <select
-                required
-                value={controlForm.sectionId}
-                onChange={(e) => setControlForm((f) => ({ ...f, sectionId: e.target.value }))}
-              >
-                <option value="">Select</option>
-                {detail.sections.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="row-2">
-              <label>
-                Field key
-                <input
-                  required
-                  value={controlForm.fieldKey}
-                  onChange={(e) => setControlForm((f) => ({ ...f, fieldKey: e.target.value }))}
-                />
+              <label className="inline-field">
+                Edit form
+                <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+                  {forms.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name} ({f.status})
+                    </option>
+                  ))}
+                </select>
               </label>
-              <label>
-                Label
-                <input
-                  required
-                  value={controlForm.label}
-                  onChange={(e) => setControlForm((f) => ({ ...f, label: e.target.value }))}
-                />
-              </label>
-            </div>
-            <label>
-              Type
-              <select
-                value={controlForm.controlType}
-                onChange={(e) => setControlForm((f) => ({ ...f, controlType: e.target.value }))}
-              >
-                <option value="TEXT">TEXT</option>
-                <option value="TEXTAREA">TEXTAREA</option>
-                <option value="NUMBER">NUMBER</option>
-                <option value="EMAIL">EMAIL</option>
-                <option value="SELECT">SELECT</option>
-                <option value="CHECKBOX">CHECKBOX</option>
-                <option value="DATE">DATE</option>
-              </select>
-            </label>
-            <button className="btn secondary" type="submit">
-              Add control
-            </button>
-          </form>
 
-          <form className="auth-form compact" onSubmit={(e) => void submitPreview(e)}>
-            <h2>Preview / submit</h2>
-            {sectionsByTab.map(({ tab, sections }) => (
-              <div key={tab?.id ?? 'root'} className="form-tab-block">
-                {tab && <h3 className="tab-heading">{tab.name}</h3>}
-                {sections.map((section) => (
-                  <div key={section.id} className="form-section-block">
-                    <h4>{section.name}</h4>
-                    <div
-                      className="form-controls-grid"
-                      style={{ gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))` }}
-                    >
-                      {section.controls.map((c) => (
-                        <label key={c.id}>
-                          {c.label}
-                          {c.required ? ' *' : ''}
-                          {c.controlType === 'TEXTAREA' ? (
-                            <textarea
-                              value={formValues[c.fieldKey] ?? ''}
-                              onChange={(e) =>
-                                setFormValues((v) => ({ ...v, [c.fieldKey]: e.target.value }))
-                              }
-                            />
-                          ) : c.controlType === 'SELECT' ? (
-                            <select
-                              value={formValues[c.fieldKey] ?? ''}
-                              onChange={(e) =>
-                                setFormValues((v) => ({ ...v, [c.fieldKey]: e.target.value }))
-                              }
-                            >
-                              <option value="">Select</option>
-                              {(Array.isArray(c.options) ? c.options : []).map((opt, idx) => {
-                                const o = opt as { label?: string; value?: string };
-                                return (
-                                  <option key={idx} value={o.value ?? ''}>
-                                    {o.label ?? o.value}
-                                  </option>
-                                );
-                              })}
-                            </select>
-                          ) : c.controlType === 'CHECKBOX' ? (
-                            <input
-                              type="checkbox"
-                              checked={formValues[c.fieldKey] === 'true'}
-                              onChange={(e) =>
-                                setFormValues((v) => ({
-                                  ...v,
-                                  [c.fieldKey]: e.target.checked ? 'true' : 'false',
-                                }))
-                              }
-                            />
-                          ) : (
-                            <input
-                              type={
-                                c.controlType === 'NUMBER'
-                                  ? 'number'
-                                  : c.controlType === 'EMAIL'
-                                    ? 'email'
-                                    : c.controlType === 'DATE'
-                                      ? 'date'
-                                      : 'text'
-                              }
-                              placeholder={c.placeholder ?? undefined}
-                              value={formValues[c.fieldKey] ?? ''}
-                              onChange={(e) =>
-                                setFormValues((v) => ({ ...v, [c.fieldKey]: e.target.value }))
-                              }
-                            />
-                          )}
-                        </label>
-                      ))}
-                    </div>
+              {detail && (
+                <>
+                  <div className="action-row">
+                    <button className="btn secondary" type="button" onClick={() => void publish()}>
+                      Publish form
+                    </button>
+                    <span className="muted">
+                      Layout: {detail.layoutType} · Tabs: {detail.tabs.length} · Sections:{' '}
+                      {detail.sections.length}
+                    </span>
                   </div>
-                ))}
-              </div>
-            ))}
-            <button className="btn primary" type="submit">
-              Submit
-            </button>
-          </form>
+
+                  <form className="auth-form compact" onSubmit={(e) => void addTab(e)}>
+                    <h2>Add tab</h2>
+                    <div className="row-2">
+                      <label>
+                        Name
+                        <input
+                          required
+                          value={tabForm.name}
+                          onChange={(e) => setTabForm((f) => ({ ...f, name: e.target.value }))}
+                        />
+                      </label>
+                      <label>
+                        Code
+                        <input
+                          required
+                          value={tabForm.code}
+                          onChange={(e) => setTabForm((f) => ({ ...f, code: e.target.value }))}
+                        />
+                      </label>
+                    </div>
+                    <button className="btn secondary" type="submit">
+                      Add tab
+                    </button>
+                  </form>
+
+                  <form className="auth-form compact" onSubmit={(e) => void addSection(e)}>
+                    <h2>Add section</h2>
+                    <div className="row-2">
+                      <label>
+                        Name
+                        <input
+                          required
+                          value={sectionForm.name}
+                          onChange={(e) => setSectionForm((f) => ({ ...f, name: e.target.value }))}
+                        />
+                      </label>
+                      <label>
+                        Code
+                        <input
+                          required
+                          value={sectionForm.code}
+                          onChange={(e) => setSectionForm((f) => ({ ...f, code: e.target.value }))}
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      Tab
+                      <select
+                        value={sectionForm.tabId}
+                        onChange={(e) => setSectionForm((f) => ({ ...f, tabId: e.target.value }))}
+                      >
+                        <option value="">None</option>
+                        {detail.tabs.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button className="btn secondary" type="submit">
+                      Add section
+                    </button>
+                  </form>
+
+                  <form className="auth-form compact" onSubmit={(e) => void addControl(e)}>
+                    <h2>Add control</h2>
+                    <label>
+                      Section
+                      <select
+                        required
+                        value={controlForm.sectionId}
+                        onChange={(e) =>
+                          setControlForm((f) => ({ ...f, sectionId: e.target.value }))
+                        }
+                      >
+                        <option value="">Select</option>
+                        {detail.sections.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="row-2">
+                      <label>
+                        Field key
+                        <input
+                          required
+                          value={controlForm.fieldKey}
+                          onChange={(e) =>
+                            setControlForm((f) => ({ ...f, fieldKey: e.target.value }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Label
+                        <input
+                          required
+                          value={controlForm.label}
+                          onChange={(e) =>
+                            setControlForm((f) => ({ ...f, label: e.target.value }))
+                          }
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      Type
+                      <select
+                        value={controlForm.controlType}
+                        onChange={(e) =>
+                          setControlForm((f) => ({ ...f, controlType: e.target.value }))
+                        }
+                      >
+                        <option value="TEXT">TEXT</option>
+                        <option value="TEXTAREA">TEXTAREA</option>
+                        <option value="NUMBER">NUMBER</option>
+                        <option value="EMAIL">EMAIL</option>
+                        <option value="SELECT">SELECT</option>
+                        <option value="CHECKBOX">CHECKBOX</option>
+                        <option value="DATE">DATE</option>
+                      </select>
+                    </label>
+                    <button className="btn secondary" type="submit">
+                      Add control
+                    </button>
+                  </form>
+
+                  <form className="auth-form compact" onSubmit={(e) => void submitPreview(e)}>
+                    <h2>Preview / submit</h2>
+                    {sectionsByTab.map(({ tab, sections }) => (
+                      <div key={tab?.id ?? 'root'} className="form-tab-block">
+                        {tab && <h3 className="tab-heading">{tab.name}</h3>}
+                        {sections.map((section) => (
+                          <div key={section.id} className="form-section-block">
+                            <h4>{section.name}</h4>
+                            <div
+                              className="form-controls-grid"
+                              style={{
+                                gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))`,
+                              }}
+                            >
+                              {section.controls.map((c) => (
+                                <label key={c.id}>
+                                  {c.label}
+                                  {c.required ? ' *' : ''}
+                                  {c.controlType === 'TEXTAREA' ? (
+                                    <textarea
+                                      value={formValues[c.fieldKey] ?? ''}
+                                      onChange={(e) =>
+                                        setFormValues((v) => ({
+                                          ...v,
+                                          [c.fieldKey]: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  ) : c.controlType === 'SELECT' ? (
+                                    <select
+                                      value={formValues[c.fieldKey] ?? ''}
+                                      onChange={(e) =>
+                                        setFormValues((v) => ({
+                                          ...v,
+                                          [c.fieldKey]: e.target.value,
+                                        }))
+                                      }
+                                    >
+                                      <option value="">Select</option>
+                                      {(Array.isArray(c.options) ? c.options : []).map((opt, idx) => {
+                                        const o = opt as { label?: string; value?: string };
+                                        return (
+                                          <option key={idx} value={o.value ?? ''}>
+                                            {o.label ?? o.value}
+                                          </option>
+                                        );
+                                      })}
+                                    </select>
+                                  ) : c.controlType === 'CHECKBOX' ? (
+                                    <input
+                                      type="checkbox"
+                                      checked={formValues[c.fieldKey] === 'true'}
+                                      onChange={(e) =>
+                                        setFormValues((v) => ({
+                                          ...v,
+                                          [c.fieldKey]: e.target.checked ? 'true' : 'false',
+                                        }))
+                                      }
+                                    />
+                                  ) : (
+                                    <input
+                                      type={
+                                        c.controlType === 'NUMBER'
+                                          ? 'number'
+                                          : c.controlType === 'EMAIL'
+                                            ? 'email'
+                                            : c.controlType === 'DATE'
+                                              ? 'date'
+                                              : 'text'
+                                      }
+                                      placeholder={c.placeholder ?? undefined}
+                                      value={formValues[c.fieldKey] ?? ''}
+                                      onChange={(e) =>
+                                        setFormValues((v) => ({
+                                          ...v,
+                                          [c.fieldKey]: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  )}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    <button className="btn primary" type="submit">
+                      Submit
+                    </button>
+                  </form>
+                </>
+              )}
+            </div>
+          </section>
         </>
       )}
-        </div>
-      </section>
     </div>
   );
 }

@@ -24,7 +24,7 @@ export type ProvisionResult =
  * Physical Postgres provisioning for a new project:
  * 1) CREATE DATABASE
  * 2) prisma db push (project schema)
- * 3) seed IAM + LoginPageConfig + project admin user
+ * 3) seed IAM + LoginPageConfig + the single project-admin user (OWNER + IAM ADMIN)
  */
 @Injectable()
 export class ProjectDbProvisioner {
@@ -132,6 +132,49 @@ export class ProjectDbProvisioner {
       schemaApplied,
       seeded,
     };
+  }
+
+  /**
+   * Terminate sessions and DROP DATABASE for a project DB.
+   * Safe when the database was never created or already removed.
+   */
+  async dropDatabase(
+    databaseName: string,
+  ): Promise<{ ok: true; dropped: boolean } | { ok: false; warning: string }> {
+    const adminUrl = process.env.DATABASE_URL;
+    if (!adminUrl) {
+      return { ok: false, warning: 'DATABASE_URL is not set; cannot DROP project database.' };
+    }
+    if (!/^[a-z][a-z0-9_]{0,62}$/.test(databaseName)) {
+      return {
+        ok: false,
+        warning: `Invalid database name "${databaseName}"; refused DROP.`,
+      };
+    }
+
+    try {
+      const existing = await this.prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
+        `SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = '${databaseName}') AS exists`,
+      );
+      if (!existing[0]?.exists) {
+        this.logger.log(`Postgres database "${databaseName}" already absent; skip DROP`);
+        return { ok: true, dropped: false };
+      }
+
+      await this.prisma.$executeRawUnsafe(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${databaseName}' AND pid <> pg_backend_pid()`,
+      );
+      await this.prisma.$executeRawUnsafe(`DROP DATABASE "${databaseName}"`);
+      this.logger.log(`Dropped Postgres database "${databaseName}"`);
+      return { ok: true, dropped: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`DROP DATABASE "${databaseName}" failed: ${message}`);
+      return {
+        ok: false,
+        warning: `Could not DROP Postgres database "${databaseName}" (${message}).`,
+      };
+    }
   }
 
   private async applyProjectSchema(connectionString: string): Promise<void> {

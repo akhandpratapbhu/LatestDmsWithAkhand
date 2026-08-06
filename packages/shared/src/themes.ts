@@ -1,5 +1,5 @@
 /**
- * Project visual theme presets for Enterprise Builder workspaces.
+ * Project visual theme presets for Configure System workspaces.
  * Applied via `data-theme` + CSS variables on the app shell / project login.
  */
 
@@ -41,8 +41,8 @@ export type ProjectThemeTokens = {
 export const PROJECT_THEME_PRESETS: Record<ProjectThemeId, ProjectThemeTokens> = {
   default: {
     id: 'default',
-    label: 'Enterprise',
-    description: 'Polished neutral builder chrome with teal accent',
+    label: 'Configure',
+    description: 'Polished neutral Configure System chrome with teal accent',
     primaryColor: '#0f766e',
     cssVars: {
       '--bg': '#eef1f6',
@@ -151,7 +151,7 @@ export const PROJECT_THEME_PRESETS: Record<ProjectThemeId, ProjectThemeTokens> =
   },
   dms: {
     id: 'dms',
-    label: 'Dealer / DMS',
+    label: 'Dealer',
     description: 'Industrial charcoal with steel blue and amber',
     primaryColor: '#3b82a0',
     cssVars: {

@@ -191,7 +191,7 @@ export function IamPage() {
     const [r, p, groups, u] = await Promise.all([
       orgApi<RoleRow[]>('/iam/roles'),
       orgApi<PermRow[]>('/iam/permissions'),
-      orgApi<MenuGroupRow[]>('/iam/menu-groups'),
+      orgApi<MenuGroupRow[]>('/iam/menu-groups?forPermissions=true'),
       orgApi<OrgUserDto[]>('/users'),
     ]);
     setRoles(r);

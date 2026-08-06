@@ -438,7 +438,7 @@ export class UsersService {
     const inviteUrl = `${appUrl}/accept-invite?token=${raw}`;
     await this.mail.sendMail(
       email,
-      'You are invited to DMS',
+      'You are invited to Configure System',
       `<p>You have been invited to join an organization.</p><p><a href="${inviteUrl}">${inviteUrl}</a></p>`,
     );
 

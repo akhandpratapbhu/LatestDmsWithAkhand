@@ -1,4 +1,4 @@
-// Platform database schema (DATABASE_URL / typically `dms`).
+// Platform database schema (DATABASE_URL / typically `configure_system`).
 // Holds platform auth, Organization (project) metadata, membership to open projects,
 // enabledFeatures, and still-shared business tables (Forms/Grids/Chat/…).
 // Project-scoped IAM / users / LoginPageConfig live in schema-project.prisma (per-project DBs).
@@ -251,8 +251,10 @@ model Organization {
   subdomain        String?  @unique
   /// Local/dev: plain connection string after CREATE DATABASE attempt. Encrypt in Phase 2b+.
   connectionString String?
-  /// Installed platform feature keys (JSON string array), e.g. ["dashboard","forms"]
-  enabledFeatures  Json     @default("[\"dashboard\",\"users\",\"roles\",\"forms\",\"grids\",\"reports\",\"chat\",\"notifications\",\"audit\",\"activity\",\"sessions\",\"calls\",\"login-page\"]")
+  /// Installed feature keys (JSON string array). Default: core + free login-page only.
+  enabledFeatures  Json     @default("[\"dashboard\",\"users\",\"roles\",\"login-page\"]")
+  /// Subscribed / admin-granted premium feature keys (JSON string array).
+  featureSubscriptions Json  @default("[]")
   ownerId          String
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -545,6 +547,8 @@ model MenuGroup {
   code           String
   sortOrder      Int      @default(0)
   isActive       Boolean  @default(true)
+  /// When true, omit from Identity & Access permissions matrix (still in sidebar for admins).
+  excludeFromPermissions Boolean @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -1353,4 +1357,16 @@ model CallRecording {
 
   @@index([callId])
   @@map("call_recordings")
+}
+
+/// Singleton Configure System (platform shell) settings.
+/// Row id is always `default`. Stores which Administration menus are enabled.
+model PlatformConfig {
+  id              String   @id @default("default")
+  /// Installed platform-shell feature keys (JSON string array).
+  enabledFeatures Json     @default("[\"projects\",\"platform-features\",\"dashboard\",\"users\",\"roles\",\"forms\",\"grids\",\"reports\",\"chat\",\"notifications\",\"audit\",\"features\",\"menu-builder\",\"activity\",\"sessions\",\"calls\",\"login-page\"]")
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  @@map("platform_config")
 }

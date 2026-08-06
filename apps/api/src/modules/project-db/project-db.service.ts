@@ -79,6 +79,18 @@ export class ProjectDbService implements OnModuleDestroy {
     return client != null;
   }
 
+  /** Disconnect and remove a cached project DB client (call before DROP DATABASE). */
+  async evictClient(organizationId: string): Promise<void> {
+    const existing = this.clients.get(organizationId);
+    if (!existing) return;
+    try {
+      await existing.$disconnect();
+    } catch {
+      /* ignore */
+    }
+    this.clients.delete(organizationId);
+  }
+
   private async resolveConnectionString(organizationId: string): Promise<string | null> {
     const org = await this.platform.organization.findUnique({
       where: { id: organizationId },

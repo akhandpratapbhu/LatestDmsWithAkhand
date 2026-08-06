@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
-import type { ProjectStatus } from '@dms/shared';
+import { Link, Navigate } from 'react-router-dom';
+import type { OrganizationDto, ProjectStatus } from '@dms/shared';
 import { PROJECT_THEME_OPTIONS, suggestDatabaseName } from '@dms/shared';
 import { useAuth } from '../../auth/auth-context';
 import { useOrg, type CreateProjectInput } from '../org-context';
@@ -25,17 +25,24 @@ const TIMEZONES = [
   'Australia/Sydney',
 ];
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
+
+function generatePassword(): string {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  const body = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').slice(0, 14);
+  return `Aa${body}1!`;
+}
 
 export function CreateProjectPage() {
   const { user } = useAuth();
   const { createOrg } = useOrg();
-  const navigate = useNavigate();
   const [step, setStep] = useState<Step>(1);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dbNameTouched, setDbNameTouched] = useState(false);
+  const [created, setCreated] = useState<OrganizationDto | null>(null);
   const [form, setForm] = useState<CreateProjectInput>({
     name: '',
     code: '',
@@ -49,6 +56,10 @@ export function CreateProjectPage() {
     status: 'ACTIVE',
     version: '1.0.0',
     databaseName: '',
+    adminFirstName: '',
+    adminLastName: '',
+    adminEmail: '',
+    adminPassword: '',
   });
 
   useEffect(() => {
@@ -103,15 +114,35 @@ export function CreateProjectPage() {
     return true;
   }
 
+  function validateStep3(): boolean {
+    if (!form.adminFirstName?.trim() || !form.adminLastName?.trim()) {
+      setError('Project admin first and last name are required');
+      return false;
+    }
+    const email = form.adminEmail?.trim() ?? '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Valid project admin email is required');
+      return false;
+    }
+    const password = form.adminPassword?.trim() ?? '';
+    if (password && (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password))) {
+      setError('Password must be at least 8 characters with a letter and a number');
+      return false;
+    }
+    setError(null);
+    return true;
+  }
+
   function goNext() {
     if (step === 1 && !validateStep1()) return;
     if (step === 2 && !validateStep2()) return;
-    setStep((s) => Math.min(3, s + 1) as Step);
+    if (step === 3 && !validateStep3()) return;
+    setStep((s) => Math.min(4, s + 1) as Step);
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!validateStep1() || !validateStep2()) {
+    if (!validateStep1() || !validateStep2() || !validateStep3()) {
       setStep(1);
       return;
     }
@@ -119,7 +150,7 @@ export function CreateProjectPage() {
     setWarning(null);
     setSaving(true);
     try {
-      const created = await createOrg({
+      const result = await createOrg({
         name: form.name.trim(),
         code: form.code?.trim() || undefined,
         description: form.description?.trim() || undefined,
@@ -132,14 +163,15 @@ export function CreateProjectPage() {
         status: form.status ?? 'ACTIVE',
         version: form.version?.trim() || '1.0.0',
         databaseName: form.databaseName?.trim(),
+        adminFirstName: form.adminFirstName!.trim(),
+        adminLastName: form.adminLastName!.trim(),
+        adminEmail: form.adminEmail!.trim(),
+        adminPassword: form.adminPassword?.trim() || undefined,
       });
-      if (created.provisioningWarning) {
-        setWarning(created.provisioningWarning);
-        // Brief pause so the warning is visible, then go to dashboard
-        setTimeout(() => navigate('/app/projects'), 2500);
-      } else {
-        navigate('/app/projects');
+      if (result.provisioningWarning) {
+        setWarning(result.provisioningWarning);
       }
+      setCreated(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create project');
     } finally {
@@ -151,6 +183,75 @@ export function CreateProjectPage() {
     return <Navigate to="/app/projects" replace />;
   }
 
+  if (created?.projectAdmin) {
+    const admin = created.projectAdmin;
+    return (
+      <section className="panel">
+        <p className="muted tiny">
+          <Link to="/app/projects">← Projects</Link>
+        </p>
+        <h1>Project created</h1>
+        <p className="lede">
+          <strong>{created.name}</strong> is ready. Share these project admin credentials once —
+          the password is not shown again.
+        </p>
+
+        {warning && <div className="alert">{warning}</div>}
+        <div className="alert success">
+          Database {created.databaseProvisioned ? 'provisioned' : 'not provisioned'} · IAM seeded
+          for the project admin (Administrator role).
+        </div>
+
+        <div className="wizard-review">
+          <h2>Project admin</h2>
+          <dl className="review-dl">
+            <div>
+              <dt>Name</dt>
+              <dd>
+                {admin.firstName} {admin.lastName}
+              </dd>
+            </div>
+            <div>
+              <dt>Email</dt>
+              <dd>
+                <code>{admin.email}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Password</dt>
+              <dd>
+                <code>{admin.password}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Login URL</dt>
+              <dd>
+                <Link to={admin.loginUrl}>{admin.loginUrl}</Link>
+              </dd>
+            </div>
+            <div>
+              <dt>Account</dt>
+              <dd>{admin.userCreated ? 'New user created' : 'Existing user reused (password updated)'}</dd>
+            </div>
+          </dl>
+          <p className="muted tiny">
+            This admin owns Identity &amp; Access, Users, and Features inside the project. Platform
+            Administration stays on <code>/app</code> only.
+          </p>
+        </div>
+
+        <div className="action-row">
+          <Link className="btn ghost" to="/app/projects">
+            Back to projects
+          </Link>
+          <Link className="btn primary" to={admin.loginUrl} target="_blank" rel="noreferrer">
+            Open project login
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="panel">
       <p className="muted tiny">
@@ -158,14 +259,15 @@ export function CreateProjectPage() {
       </p>
       <h1>Add Project</h1>
       <p className="lede">
-        Create a project (tenant). We save platform metadata, try to provision a Postgres database,
-        and seed IAM for you as project admin.
+        Create a project (tenant) with exactly one project admin. They log in at{' '}
+        <code>/{'{slug}'}/login</code> and set up roles, users, permissions, and features.
       </p>
 
       <ol className="wizard-steps" aria-label="Wizard steps">
         <li className={step === 1 ? 'active' : step > 1 ? 'done' : ''}>1. Basic</li>
         <li className={step === 2 ? 'active' : step > 2 ? 'done' : ''}>2. Database</li>
-        <li className={step === 3 ? 'active' : ''}>3. Review</li>
+        <li className={step === 3 ? 'active' : step > 3 ? 'done' : ''}>3. Project admin</li>
+        <li className={step === 4 ? 'active' : ''}>4. Review</li>
       </ol>
 
       {error && <div className="alert error">{error}</div>}
@@ -365,6 +467,67 @@ export function CreateProjectPage() {
         )}
 
         {step === 3 && (
+          <>
+            <p className="muted">
+              Exactly one project admin is created. They own IAM (roles, users, permissions) and
+              Features inside this project. Leave password blank to auto-generate.
+            </p>
+            <div className="row-2">
+              <label>
+                First name
+                <input
+                  value={form.adminFirstName ?? ''}
+                  onChange={(e) => setField('adminFirstName', e.target.value)}
+                  required
+                  minLength={1}
+                  maxLength={80}
+                  autoFocus
+                />
+              </label>
+              <label>
+                Last name
+                <input
+                  value={form.adminLastName ?? ''}
+                  onChange={(e) => setField('adminLastName', e.target.value)}
+                  required
+                  minLength={1}
+                  maxLength={80}
+                />
+              </label>
+            </div>
+            <label>
+              Email
+              <input
+                type="email"
+                value={form.adminEmail ?? ''}
+                onChange={(e) => setField('adminEmail', e.target.value)}
+                required
+                placeholder="admin@example.com"
+              />
+            </label>
+            <label>
+              Password (optional)
+              <input
+                type="text"
+                value={form.adminPassword ?? ''}
+                onChange={(e) => setField('adminPassword', e.target.value)}
+                minLength={8}
+                maxLength={72}
+                autoComplete="new-password"
+                placeholder="Leave blank to auto-generate"
+              />
+            </label>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => setField('adminPassword', generatePassword())}
+            >
+              Generate password
+            </button>
+          </>
+        )}
+
+        {step === 4 && (
           <div className="wizard-review">
             <h2>Review</h2>
             <dl className="review-dl">
@@ -398,10 +561,17 @@ export function CreateProjectPage() {
                   v{form.version} · {form.status}
                 </dd>
               </div>
+              <div>
+                <dt>Project admin</dt>
+                <dd>
+                  {form.adminFirstName} {form.adminLastName} · {form.adminEmail}
+                  {form.adminPassword ? ' · password set' : ' · password auto-generated'}
+                </dd>
+              </div>
             </dl>
             <p className="muted tiny">
-              You will be project admin. IAM roles and menus are seeded automatically. If database
-              creation fails (permissions), the project is still created with a warning.
+              Default features: dashboard, users, roles, login-page. IAM Administrator role is
+              seeded for the project admin. No other users are created.
             </p>
           </div>
         )}
@@ -421,7 +591,7 @@ export function CreateProjectPage() {
               Cancel
             </Link>
           )}
-          {step < 3 ? (
+          {step < 4 ? (
             <button type="button" className="btn primary" onClick={goNext}>
               Next
             </button>

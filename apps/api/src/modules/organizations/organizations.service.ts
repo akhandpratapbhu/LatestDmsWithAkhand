@@ -15,25 +15,40 @@ import {
   PasswordPolicy,
   Prisma,
   Team,
+  User,
 } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import {
   BranchDto,
   CostCenterDto,
   DEFAULT_ENABLED_FEATURES,
+  DeleteOrganizationResultDto,
   DepartmentDto,
   DesignationDto,
+  isFeatureFullyEnabled,
+  isProtectedProjectFeature,
   OrganizationDto,
   PasswordPolicyDto,
   PLATFORM_FEATURE_CATALOG,
   PlatformFeatureCatalogItem,
   RESERVED_PROJECT_SLUGS,
+  projectLoginPath,
   suggestDatabaseName,
   suggestProjectSlug,
   TeamDto,
 } from '@dms/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IamSeedService } from '../iam/iam-seed.service';
+import { IamService } from '../iam/iam.service';
+import { ProjectDbService } from '../project-db/project-db.service';
+import { UsersService } from '../users/users.service';
 import { ProjectDbProvisioner } from './project-db.provisioner';
+
+/** One-time project-admin password when the wizard omits one. */
+function generateProjectAdminPassword(): string {
+  // Letter + digit required by password policy; base64url for readability.
+  return `Aa${randomBytes(12).toString('base64url')}1!`;
+}
 
 @Injectable()
 export class OrganizationsService {
@@ -41,19 +56,55 @@ export class OrganizationsService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => IamSeedService))
     private readonly iamSeed: IamSeedService,
+    @Inject(forwardRef(() => IamService))
+    private readonly iam: IamService,
+    @Inject(forwardRef(() => UsersService))
+    private readonly users: UsersService,
     private readonly dbProvisioner: ProjectDbProvisioner,
+    private readonly projectDb: ProjectDbService,
   ) {}
 
-  private parseEnabledFeatures(value: Prisma.JsonValue | null | undefined): string[] {
-    if (value == null) return [...DEFAULT_ENABLED_FEATURES];
-    if (!Array.isArray(value)) return [...DEFAULT_ENABLED_FEATURES];
+  private parseStringArray(
+    value: Prisma.JsonValue | null | undefined,
+    fallback: string[] = [],
+  ): string[] {
+    if (value == null) return [...fallback];
+    // Legacy rows / bad writes may store a JSON-encoded string instead of an array.
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        if (Array.isArray(parsed)) {
+          return parsed.filter((v): v is string => typeof v === 'string');
+        }
+      } catch {
+        return [...fallback];
+      }
+      return [...fallback];
+    }
+    if (!Array.isArray(value)) return [...fallback];
     return value.filter((v): v is string => typeof v === 'string');
+  }
+
+  private parseEnabledFeatures(value: Prisma.JsonValue | null | undefined): string[] {
+    return this.parseStringArray(value, DEFAULT_ENABLED_FEATURES);
+  }
+
+  /** Stored list only — never invent defaults (used by install/uninstall mutations). */
+  private readStoredFeatureIds(value: Prisma.JsonValue | null | undefined): string[] {
+    return this.parseStringArray(value, []);
+  }
+
+  private parseFeatureSubscriptions(value: Prisma.JsonValue | null | undefined): string[] {
+    return this.parseStringArray(value, []);
   }
 
   toOrg(
     o: Organization,
     membershipRole?: OrganizationDto['membershipRole'],
-    extras?: Pick<OrganizationDto, 'provisioningWarning' | 'databaseProvisioned'>,
+    extras?: Pick<
+      OrganizationDto,
+      'provisioningWarning' | 'databaseProvisioned' | 'projectAdmin'
+    >,
   ): OrganizationDto {
     return {
       id: o.id,
@@ -73,6 +124,7 @@ export class OrganizationsService {
       subdomain: o.subdomain,
       connectionString: o.connectionString,
       enabledFeatures: this.parseEnabledFeatures(o.enabledFeatures),
+      featureSubscriptions: this.parseFeatureSubscriptions(o.featureSubscriptions),
       ownerId: o.ownerId,
       ...(membershipRole ? { membershipRole } : {}),
       createdAt: o.createdAt.toISOString(),
@@ -199,11 +251,54 @@ export class OrganizationsService {
       version?: string;
       databaseName?: string;
       enabledFeatures?: string[];
+      adminFirstName: string;
+      adminLastName: string;
+      adminEmail: string;
+      adminPassword?: string;
     },
   ): Promise<OrganizationDto> {
     const actor = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!actor?.isPlatformAdmin) {
       throw new ForbiddenException('Only platform admins can create projects');
+    }
+
+    const adminFirstName = data.adminFirstName.trim();
+    const adminLastName = data.adminLastName.trim();
+    const adminEmail = data.adminEmail.trim().toLowerCase();
+    if (!adminFirstName || !adminLastName) {
+      throw new BadRequestException('Project admin first and last name are required');
+    }
+    if (!adminEmail) {
+      throw new BadRequestException('Project admin email is required');
+    }
+
+    const adminPasswordPlain =
+      data.adminPassword?.trim() || generateProjectAdminPassword();
+
+    // Exactly one project admin: create platform User if email is new, else reuse.
+    const existingAdmin = await this.users.findByEmail(adminEmail);
+    let userCreated = false;
+    let adminUser: User;
+    if (!existingAdmin) {
+      const created = await this.users.createUser({
+        email: adminEmail,
+        password: adminPasswordPlain,
+        firstName: adminFirstName,
+        lastName: adminLastName,
+      });
+      adminUser = await this.users.markEmailVerified(created.id);
+      userCreated = true;
+    } else {
+      await this.users.updatePassword(existingAdmin.id, adminPasswordPlain);
+      adminUser = await this.prisma.user.update({
+        where: { id: existingAdmin.id },
+        data: {
+          firstName: adminFirstName,
+          lastName: adminLastName,
+          status: 'ACTIVE',
+          isActive: true,
+        },
+      });
     }
 
     const databaseName = (data.databaseName?.trim() || suggestDatabaseName(data.name)).slice(0, 63);
@@ -237,7 +332,8 @@ export class OrganizationsService {
           version: data.version?.trim() || '1.0.0',
           databaseName,
           slug,
-          ownerId: userId,
+          // Project admin owns the project (not the platform operator who clicked Create).
+          ownerId: adminUser.id,
           theme: data.theme ?? 'default',
           currency: data.currency ?? 'USD',
           language: data.language ?? 'en',
@@ -246,9 +342,10 @@ export class OrganizationsService {
           status: data.status ?? 'ACTIVE',
           isActive: (data.status ?? 'ACTIVE') !== 'ARCHIVED' && (data.status ?? 'ACTIVE') !== 'SUSPENDED',
           enabledFeatures,
+          featureSubscriptions: [],
           members: {
             create: {
-              userId,
+              userId: adminUser.id,
               role: 'OWNER',
               status: 'ACTIVE',
             },
@@ -260,28 +357,31 @@ export class OrganizationsService {
       return created;
     });
 
+    // Home org for the project admin when they do not already have one.
+    if (!adminUser.organizationId) {
+      adminUser = await this.prisma.user.update({
+        where: { id: adminUser.id },
+        data: { organizationId: org.id },
+      });
+    }
+
     const ownerMember = org.members[0];
     // Platform IAM seed remains as fallback for orgs without a project DB.
     if (ownerMember) {
       await this.iamSeed.seedOrganization(org.id, ownerMember.id);
     }
 
-    const ownerUser = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!ownerUser) {
-      throw new NotFoundException('Owner user not found');
-    }
-
     const provision = await this.dbProvisioner.provision({
       databaseName,
       organizationId: org.id,
       owner: {
-        id: ownerUser.id,
-        email: ownerUser.email,
-        passwordHash: ownerUser.passwordHash,
-        firstName: ownerUser.firstName,
-        lastName: ownerUser.lastName,
-        phone: ownerUser.phone,
-        avatarUrl: ownerUser.avatarUrl,
+        id: adminUser.id,
+        email: adminUser.email,
+        passwordHash: adminUser.passwordHash,
+        firstName: adminUser.firstName,
+        lastName: adminUser.lastName,
+        phone: adminUser.phone,
+        avatarUrl: adminUser.avatarUrl,
       },
     });
 
@@ -312,13 +412,42 @@ export class OrganizationsService {
       );
     }
 
-    return this.toOrg(updated, 'OWNER', {
+    return this.toOrg(updated, undefined, {
       databaseProvisioned: provision.ok,
       ...(warningParts.length ? { provisioningWarning: warningParts.join(' ') } : {}),
+      projectAdmin: {
+        userId: adminUser.id,
+        email: adminUser.email,
+        firstName: adminUser.firstName,
+        lastName: adminUser.lastName,
+        password: adminPasswordPlain,
+        loginUrl: projectLoginPath(updated.slug),
+        userCreated,
+      },
     });
   }
 
   async listMyOrganizations(userId: string): Promise<OrganizationDto[]> {
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isPlatformAdmin: true },
+    });
+
+    // Platform operators see every project without needing membership.
+    if (actor?.isPlatformAdmin) {
+      const orgs = await this.prisma.organization.findMany({
+        orderBy: { createdAt: 'asc' },
+      });
+      const memberships = await this.prisma.organizationMember.findMany({
+        where: { userId, status: 'ACTIVE' },
+        select: { organizationId: true, role: true },
+      });
+      const roleByOrg = new Map(memberships.map((m) => [m.organizationId, m.role]));
+      return orgs.map((o) =>
+        this.toOrg(o, roleByOrg.get(o.id) as OrganizationDto['membershipRole'] | undefined),
+      );
+    }
+
     const memberships = await this.prisma.organizationMember.findMany({
       where: { userId, status: 'ACTIVE' },
       include: { organization: true },
@@ -333,6 +462,68 @@ export class OrganizationsService {
     const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
     if (!org) throw new NotFoundException('Organization not found');
     return this.toOrg(org);
+  }
+
+  /**
+   * Platform-admin only: remove project metadata (cascades members, forms, IAM, …)
+   * and DROP the provisioned Postgres database when present.
+   *
+   * When DROP fails and `force` is false, throws so the UI can confirm metadata-only removal.
+   * When `force` is true, metadata is deleted even if DROP fails (warning returned).
+   */
+  async deleteOrganization(
+    actorUserId: string,
+    organizationId: string,
+    opts?: { force?: boolean },
+  ): Promise<DeleteOrganizationResultDto> {
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: { isPlatformAdmin: true },
+    });
+    if (!actor?.isPlatformAdmin) {
+      throw new ForbiddenException('Only platform admins can delete projects');
+    }
+
+    const org = await this.prisma.organization.findUnique({ where: { id: organizationId } });
+    if (!org) throw new NotFoundException('Organization not found');
+
+    await this.projectDb.evictClient(organizationId);
+
+    let databaseDropped = false;
+    let databaseDropWarning: string | undefined;
+
+    const dbName = org.databaseName?.trim() || null;
+    if (dbName || org.connectionString?.trim()) {
+      if (!dbName) {
+        databaseDropWarning =
+          'Project had a connectionString but no databaseName; skipped DROP DATABASE.';
+      } else {
+        const drop = await this.dbProvisioner.dropDatabase(dbName);
+        if (drop.ok) {
+          databaseDropped = drop.dropped;
+        } else {
+          databaseDropWarning = drop.warning;
+          if (!opts?.force) {
+            throw new BadRequestException({
+              message: drop.warning,
+              code: 'PROJECT_DB_DROP_FAILED',
+              databaseName: dbName,
+              hint: 'Retry with force=true to remove project metadata without dropping the database.',
+            });
+          }
+        }
+      }
+    }
+
+    await this.prisma.organization.delete({ where: { id: organizationId } });
+
+    return {
+      id: org.id,
+      name: org.name,
+      databaseName: dbName,
+      databaseDropped,
+      ...(databaseDropWarning ? { databaseDropWarning } : {}),
+    };
   }
 
   async updateOrganization(
@@ -390,29 +581,119 @@ export class OrganizationsService {
     }
     const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
     if (!org) throw new NotFoundException('Organization not found');
-    const current = this.parseEnabledFeatures(org.enabledFeatures);
-    if (current.includes(featureId)) return this.toOrg(org);
+    const current = this.readStoredFeatureIds(org.enabledFeatures);
+    if (current.includes(featureId)) {
+      await this.iam.setFeatureMenusActive(orgId, featureId, true);
+      return this.toOrg(org);
+    }
     const enabledFeatures = [...current, featureId];
     const updated = await this.prisma.organization.update({
       where: { id: orgId },
       data: { enabledFeatures },
     });
+    await this.iam.setFeatureMenusActive(orgId, featureId, true);
     return this.toOrg(updated);
   }
 
-  async uninstallFeature(orgId: string, featureId: string): Promise<OrganizationDto> {
+  async uninstallFeature(
+    orgId: string,
+    featureId: string,
+    actorUserId?: string,
+  ): Promise<OrganizationDto> {
     const feature = PLATFORM_FEATURE_CATALOG.find((f) => f.id === featureId);
     if (!feature) throw new BadRequestException(`Unknown feature: ${featureId}`);
     const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
     if (!org) throw new NotFoundException('Organization not found');
-    const enabledFeatures = this.parseEnabledFeatures(org.enabledFeatures).filter(
+
+    if (isProtectedProjectFeature(featureId)) {
+      let isPlatformAdmin = false;
+      if (actorUserId) {
+        const actor = await this.prisma.user.findUnique({
+          where: { id: actorUserId },
+          select: { isPlatformAdmin: true },
+        });
+        isPlatformAdmin = Boolean(actor?.isPlatformAdmin);
+      }
+      if (!isPlatformAdmin) {
+        throw new ForbiddenException(
+          `${feature.name} is a core project feature. Only a platform admin can uninstall it.`,
+        );
+      }
+    }
+
+    const enabledFeatures = this.readStoredFeatureIds(org.enabledFeatures).filter(
+      (id) => id !== featureId,
+    );
+    const featureSubscriptions = this.parseFeatureSubscriptions(org.featureSubscriptions).filter(
       (id) => id !== featureId,
     );
     const updated = await this.prisma.organization.update({
       where: { id: orgId },
-      data: { enabledFeatures },
+      data: { enabledFeatures, featureSubscriptions },
+    });
+    await this.iam.setFeatureMenusActive(orgId, featureId, false);
+    return this.toOrg(updated);
+  }
+
+  /**
+   * Mock Stripe checkout / admin grant: mark a premium feature as subscribed for the project.
+   * Free features (no requiresSubscription) are treated as already available once installed.
+   */
+  async subscribeFeature(
+    orgId: string,
+    featureId: string,
+    opts?: { provider?: string; grantAsPlatformAdmin?: boolean },
+  ): Promise<OrganizationDto> {
+    const feature = PLATFORM_FEATURE_CATALOG.find((f) => f.id === featureId);
+    if (!feature) throw new BadRequestException(`Unknown feature: ${featureId}`);
+    if (feature.comingSoon) {
+      throw new BadRequestException(`${feature.name} is coming soon`);
+    }
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    if (!org) throw new NotFoundException('Organization not found');
+
+    const enabledFeatures = this.readStoredFeatureIds(org.enabledFeatures);
+    if (!enabledFeatures.includes(featureId)) {
+      throw new BadRequestException(
+        `${feature.name} must be installed before it can be subscribed`,
+      );
+    }
+
+    const current = this.parseFeatureSubscriptions(org.featureSubscriptions);
+    if (current.includes(featureId)) return this.toOrg(org);
+
+    // Free features do not need a subscription entry; keep list for premium only.
+    if (!feature.requiresSubscription) return this.toOrg(org);
+
+    const featureSubscriptions = [...current, featureId];
+    const updated = await this.prisma.organization.update({
+      where: { id: orgId },
+      data: { featureSubscriptions },
+    });
+    void opts;
+    return this.toOrg(updated);
+  }
+
+  async unsubscribeFeature(orgId: string, featureId: string): Promise<OrganizationDto> {
+    const feature = PLATFORM_FEATURE_CATALOG.find((f) => f.id === featureId);
+    if (!feature) throw new BadRequestException(`Unknown feature: ${featureId}`);
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    if (!org) throw new NotFoundException('Organization not found');
+    const featureSubscriptions = this.parseFeatureSubscriptions(org.featureSubscriptions).filter(
+      (id) => id !== featureId,
+    );
+    const updated = await this.prisma.organization.update({
+      where: { id: orgId },
+      data: { featureSubscriptions },
     });
     return this.toOrg(updated);
+  }
+
+  /** Whether a premium feature is fully unlocked for API/route use. */
+  isFeatureUnlocked(org: Organization, featureId: string): boolean {
+    const enabled = this.parseEnabledFeatures(org.enabledFeatures);
+    const subs = this.parseFeatureSubscriptions(org.featureSubscriptions);
+    return isFeatureFullyEnabled(featureId, enabled, subs);
   }
 
   // Branches
