@@ -8,7 +8,7 @@ export class HealthController {
   check() {
     return {
       status: 'ok',
-      service: 'dms-api',
+      service: 'configure-api',
       timestamp: new Date().toISOString(),
     };
   }

@@ -47,7 +47,7 @@ Images are always published when CD runs. Deploy steps call an optional webhook 
 ```bash
 git init
 git add .
-git commit -m "chore: initial DMS foundation and auth"
+git commit -m "chore: initial Configure System foundation and auth"
 gh repo create fullcursorDMS --private --source=. --remote=origin --push
 # or create on github.com and: git remote add origin <url> && git push -u origin main
 ```

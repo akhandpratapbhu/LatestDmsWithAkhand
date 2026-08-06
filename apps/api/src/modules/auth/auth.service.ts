@@ -6,7 +6,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { LoginResponse, MessageResponse, SessionInfo } from '@dms/shared';
+import {
+  ForgotPasswordResetTokenResponse,
+  LoginResponse,
+  MessageResponse,
+  SessionInfo,
+} from '@dms/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../../mail/mail.service';
 import { UsersService } from '../users/users.service';
@@ -19,8 +24,10 @@ import {
   RegisterDto,
   ResetPasswordDto,
   VerifyEmailDto,
+  VerifyForgotPasswordOtpDto,
   VerifyOtpDto,
 } from './dto/auth.dto';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class AuthService {
@@ -32,6 +39,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   async register(dto: RegisterDto): Promise<MessageResponse> {
@@ -48,9 +56,35 @@ export class AuthService {
   ): Promise<LoginResponse> {
     const user = await this.users.findByEmail(dto.email);
     if (!user || !(await this.users.validatePassword(user, dto.password))) {
+      if (user) {
+        await this.audit.recordLogin({
+          userId: user.id,
+          success: false,
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+          deviceName: dto.deviceName,
+          failureReason: 'Invalid password',
+        });
+        await this.audit.log({
+          userId: user.id,
+          action: 'LOGIN_FAILED',
+          resource: 'auth',
+          summary: 'Login failed',
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+        });
+      }
       throw new UnauthorizedException('Invalid email or password');
     }
     if (!user.isActive) {
+      await this.audit.recordLogin({
+        userId: user.id,
+        success: false,
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+        deviceName: dto.deviceName,
+        failureReason: 'Account disabled',
+      });
       throw new UnauthorizedException('Account is disabled');
     }
 
@@ -129,6 +163,12 @@ export class AuthService {
   }): Promise<MessageResponse> {
     if (input.allDevices) {
       await this.sessions.revokeAllSessions(input.userId);
+      await this.audit.log({
+        userId: input.userId,
+        action: 'LOGOUT',
+        resource: 'auth',
+        summary: 'Logged out from all devices',
+      });
       return { message: 'Logged out from all devices' };
     }
 
@@ -137,18 +177,45 @@ export class AuthService {
     } else {
       await this.sessions.revokeSession(input.userId, input.sessionId);
     }
+    await this.audit.log({
+      userId: input.userId,
+      action: 'LOGOUT',
+      resource: 'auth',
+      summary: 'Logged out',
+      metadata: { sessionId: input.sessionId },
+    });
 
     return { message: 'Logged out successfully' };
   }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<MessageResponse> {
     const user = await this.users.findByEmail(dto.email);
-    if (!user) {
-      return { message: 'If that email exists, a reset link was sent' };
+    if (!user || !user.isActive) {
+      return { message: 'If that email exists, a password reset OTP was sent' };
     }
 
+    try {
+      return await this.otp.requestOtp(user.email, 'reset');
+    } catch (err) {
+      if (err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
+        throw err;
+      }
+      throw err;
+    }
+  }
+
+  async verifyForgotPasswordOtp(
+    dto: VerifyForgotPasswordOtpDto,
+  ): Promise<ForgotPasswordResetTokenResponse> {
+    const user = await this.users.findByEmail(dto.email);
+    if (!user || !user.isActive) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    await this.otp.verifyOtp(dto.email, dto.otp, 'reset');
+
     const raw = this.tokens.generateRawToken();
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     await this.prisma.passwordResetToken.create({
       data: {
         userId: user.id,
@@ -157,11 +224,10 @@ export class AuthService {
       },
     });
 
-    const appUrl = this.config.get<string>('APP_URL', 'http://localhost:5173');
-    const resetUrl = `${appUrl}/reset-password?token=${raw}`;
-    await this.mail.sendPasswordReset(user.email, resetUrl);
-
-    return { message: 'If that email exists, a reset link was sent' };
+    return {
+      message: 'OTP verified. Set your new password.',
+      resetToken: raw,
+    };
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<MessageResponse> {
@@ -262,6 +328,23 @@ export class AuthService {
     });
 
     const user = await this.users.findById(userId);
+
+    await this.audit.recordLogin({
+      userId,
+      success: true,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+      deviceName: meta.deviceName,
+    });
+    await this.audit.log({
+      userId,
+      action: 'LOGIN',
+      resource: 'auth',
+      resourceId: session.id,
+      summary: 'User logged in',
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    });
 
     return {
       user: this.users.toAuthUser(user),
