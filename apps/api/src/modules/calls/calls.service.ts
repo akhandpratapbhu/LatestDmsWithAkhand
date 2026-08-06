@@ -7,6 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ProjectDbService } from '../project-db/project-db.service';
 import { CallsGateway } from './calls.gateway';
 import { CallStatus, CreateCallDto } from './dto/calls.dto';
 
@@ -55,12 +56,42 @@ const callInclude = {
 export class CallsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly projectDb: ProjectDbService,
     @Inject(forwardRef(() => CallsGateway))
     private readonly gateway: CallsGateway,
   ) {}
 
   private get db() {
     return this.prisma as unknown as CallsDb;
+  }
+
+  /** Prefer project-DB membership when the org has a tenant DB (e.g. Divya Hospital). */
+  private async assertUserInOrganization(organizationId: string, userId: string) {
+    const project = await this.projectDb.getClient(organizationId);
+    if (project) {
+      const member = await project.organizationMember.findUnique({
+        where: { organizationId_userId: { organizationId, userId } },
+      });
+      if (member) return;
+      const platformUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { isPlatformAdmin: true },
+      });
+      if (platformUser?.isPlatformAdmin) return;
+      throw new BadRequestException('Callee is not a member of this organization');
+    }
+
+    const member = await this.prisma.organizationMember.findUnique({
+      where: {
+        organizationId_userId: {
+          organizationId,
+          userId,
+        },
+      },
+    });
+    if (!member) {
+      throw new BadRequestException('Callee is not a member of this organization');
+    }
   }
 
   async create(organizationId: string, callerId: string, dto: CreateCallDto) {
@@ -74,17 +105,7 @@ export class CallsService {
     }
 
     if (dto.calleeUserId) {
-      const member = await this.prisma.organizationMember.findUnique({
-        where: {
-          organizationId_userId: {
-            organizationId,
-            userId: dto.calleeUserId,
-          },
-        },
-      });
-      if (!member) {
-        throw new BadRequestException('Callee is not a member of this organization');
-      }
+      await this.assertUserInOrganization(organizationId, dto.calleeUserId);
     }
 
     const call = await this.db.callSession.create({

@@ -230,6 +230,14 @@ export function ChatPage() {
     };
   }, [roomId]);
 
+  // Attach media after call UI mounts (video refs are null until activeCall renders).
+  useEffect(() => {
+    if (!activeCall) return;
+    if (localStream.current && localVideo.current) {
+      localVideo.current.srcObject = localStream.current;
+    }
+  }, [activeCall]);
+
   function teardownMedia() {
     recorder.current?.stop();
     recorder.current = null;
@@ -367,36 +375,61 @@ export function ChatPage() {
   }
 
   async function startCall(callType: 'AUDIO' | 'VIDEO', contact?: DirectoryContact) {
-    const body: Record<string, unknown> = { callType, roomId: roomId || undefined };
-    if (contact?.kind === 'USER') body.calleeUserId = contact.id;
-    else if (contact) {
-      body.contactKind = contact.kind;
-      body.contactId = contact.id;
-      if (contact.linkedUserId) body.calleeUserId = contact.linkedUserId;
-    } else if (selectedRoom) {
-      const peer = selectedRoom.members.find((m) => m.userId !== user?.id);
-      if (peer) body.calleeUserId = peer.userId;
-      if (selectedRoom.contactKind && selectedRoom.contactId) {
-        body.contactKind = selectedRoom.contactKind;
-        body.contactId = selectedRoom.contactId;
+    setError(null);
+    try {
+      const body: Record<string, unknown> = { callType, roomId: roomId || undefined };
+      if (contact?.kind === 'USER') body.calleeUserId = contact.id;
+      else if (contact) {
+        body.contactKind = contact.kind;
+        body.contactId = contact.id;
+        if (contact.linkedUserId) body.calleeUserId = contact.linkedUserId;
+      } else if (selectedRoom) {
+        const peer = selectedRoom.members.find((m) => m.userId !== user?.id);
+        if (peer) body.calleeUserId = peer.userId;
+        if (selectedRoom.contactKind && selectedRoom.contactId) {
+          body.contactKind = selectedRoom.contactKind;
+          body.contactId = selectedRoom.contactId;
+        }
       }
-    }
-    const call = await orgApi<IncomingCall>('/calls', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
-    setActiveCall(call);
-    if (call.calleeUserId) {
-      await ensurePeer(call.id, true);
+      if (!body.calleeUserId && !(body.contactKind && body.contactId)) {
+        setError('Select a chat or contact before starting a call');
+        return;
+      }
+      const call = await orgApi<IncomingCall>('/calls', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      setActiveCall(call);
+      setIncoming(null);
+      if (call.calleeUserId) {
+        // Let React mount the call stage (video refs) before binding media.
+        window.setTimeout(() => {
+          void ensurePeer(call.id, true).catch((e) =>
+            setError(e instanceof Error ? e.message : 'Failed to start media'),
+          );
+        }, 50);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to start call');
     }
   }
 
   async function answerCall() {
     if (!incoming) return;
-    await orgApi(`/calls/${incoming.id}/answer`, { method: 'POST', body: '{}' });
-    setActiveCall(incoming);
-    setIncoming(null);
-    await ensurePeer(incoming.id, false);
+    setError(null);
+    try {
+      await orgApi(`/calls/${incoming.id}/answer`, { method: 'POST', body: '{}' });
+      const call = incoming;
+      setActiveCall(call);
+      setIncoming(null);
+      window.setTimeout(() => {
+        void ensurePeer(call.id, false).catch((e) =>
+          setError(e instanceof Error ? e.message : 'Failed to open media'),
+        );
+      }, 50);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to answer call');
+    }
   }
 
   async function rejectCall() {
@@ -475,7 +508,7 @@ export function ChatPage() {
       {error && <div className="alert error">{error}</div>}
 
       {incoming && (
-        <div className="alert success call-banner">
+        <div className="alert success call-banner call-overlay-banner">
           Incoming {incoming.callType.toLowerCase()} call
           <div className="action-row">
             <button className="btn primary" type="button" onClick={() => void answerCall()}>
@@ -483,6 +516,29 @@ export function ChatPage() {
             </button>
             <button className="btn secondary" type="button" onClick={() => void rejectCall()}>
               Reject
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeCall && (
+        <div className="call-stage call-overlay-stage">
+          <h3>
+            {activeCall.callType} call · {activeCall.id.slice(0, 8)}
+          </h3>
+          <div className="video-row">
+            <video ref={localVideo} autoPlay muted playsInline />
+            <video ref={remoteVideo} autoPlay playsInline />
+          </div>
+          <div className="action-row">
+            <button className="btn secondary" type="button" onClick={() => void toggleScreenShare()}>
+              Screen share
+            </button>
+            <button className="btn secondary" type="button" onClick={startRecording}>
+              Record
+            </button>
+            <button className="btn primary" type="button" onClick={() => void endCall()}>
+              End
             </button>
           </div>
         </div>
@@ -730,29 +786,6 @@ export function ChatPage() {
             <div className="empty-state">
               <strong>Start a conversation</strong>
               Pick a contact on the left, or create a group like “Family”.
-            </div>
-          )}
-
-          {activeCall && (
-            <div className="call-stage">
-              <h3>
-                {activeCall.callType} call · {activeCall.id.slice(0, 8)}
-              </h3>
-              <div className="video-row">
-                <video ref={localVideo} autoPlay muted playsInline />
-                <video ref={remoteVideo} autoPlay playsInline />
-              </div>
-              <div className="action-row">
-                <button className="btn secondary" type="button" onClick={() => void toggleScreenShare()}>
-                  Screen share
-                </button>
-                <button className="btn secondary" type="button" onClick={startRecording}>
-                  Record
-                </button>
-                <button className="btn primary" type="button" onClick={() => void endCall()}>
-                  End
-                </button>
-              </div>
             </div>
           )}
         </div>

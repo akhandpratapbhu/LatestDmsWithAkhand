@@ -2550,6 +2550,25 @@ label.check {
   padding-top: 0.85rem;
 }
 
+.call-overlay-banner {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.call-overlay-stage {
+  position: sticky;
+  top: 0;
+  z-index: 35;
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel, #fff);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
 .video-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
