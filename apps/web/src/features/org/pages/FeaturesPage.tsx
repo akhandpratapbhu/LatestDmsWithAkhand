@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
+  displayFeatureName,
   featureSubscribeAppPath,
   isProtectedProjectFeature,
   PLATFORM_FEATURE_CATALOG,
@@ -72,9 +73,9 @@ export function FeaturesPage() {
       setMessage(
         installing
           ? feature.requiresSubscription
-            ? `${feature.name} installed — open Subscription to enable full access.`
-            : `${feature.name} installed — related sidebar menus are now visible.`
-          : `${feature.name} uninstalled — related sidebar menus are hidden.`,
+            ? `${displayFeatureName(feature, currentOrg.name)} installed — open Subscription to enable full access.`
+            : `${displayFeatureName(feature, currentOrg.name)} installed — related sidebar menus are now visible.`
+          : `${displayFeatureName(feature, currentOrg.name)} uninstalled — related sidebar menus are hidden.`,
       );
       if (installing && feature.requiresSubscription) {
         navigate(href(featureSubscribeAppPath(feature.id)));
@@ -147,10 +148,11 @@ export function FeaturesPage() {
                   const isOn = installed.has(feature.id);
                   const isSub = subscribed.has(feature.id);
                   const uninstallAllowed = canUninstall(feature);
+                  const title = displayFeatureName(feature, currentOrg.name);
                   return (
                     <li key={feature.id} className="feature-card">
                       <div className="feature-card-top">
-                        <strong>{feature.name}</strong>
+                        <strong>{title}</strong>
                         {feature.comingSoon ? (
                           <span className="alert project-status">Soon</span>
                         ) : isOn && feature.requiresSubscription && isSub ? (
@@ -164,7 +166,11 @@ export function FeaturesPage() {
                         )}
                       </div>
                       <p className="muted">{feature.description}</p>
-                      {feature.requiresSubscription ? (
+                      {feature.id === 'project-forms' ? (
+                        <p className="muted tiny">
+                          Install to show all form-linked menus in {currentOrg.name}; uninstall to hide them.
+                        </p>
+                      ) : feature.requiresSubscription ? (
                         <p className="muted tiny">Premium — install then subscribe</p>
                       ) : isProtectedProjectFeature(feature.id) ? (
                         <p className="muted tiny">

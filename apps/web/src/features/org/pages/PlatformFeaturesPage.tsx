@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  displayFeatureName,
   isProtectedPlatformFeature,
   PLATFORM_SHELL_FEATURE_CATALOG,
   type PlatformConfigDto,
@@ -9,10 +10,12 @@ import {
 import { api } from '../../../lib/api';
 import { PageHeader } from '../../../components/PageHeader';
 import { useAuth } from '../../auth/auth-context';
+import { useOrg } from '../org-context';
 import { usePlatformConfig } from '../platform-config-context';
 
 export function PlatformFeaturesPage() {
   const { user } = useAuth();
+  const { currentOrg } = useOrg();
   const { config, refresh, setConfig } = usePlatformConfig();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -100,10 +103,11 @@ export function PlatformFeaturesPage() {
             {features.map((feature) => {
               const isOn = installed.has(feature.id);
               const protectedFeature = isProtectedPlatformFeature(feature.id);
+              const title = displayFeatureName(feature, currentOrg?.name);
               return (
                 <li key={feature.id} className="feature-card">
                   <div className="feature-card-top">
-                    <strong>{feature.name}</strong>
+                    <strong>{title}</strong>
                     {feature.comingSoon ? (
                       <span className="alert project-status">Soon</span>
                     ) : isOn && feature.requiresSubscription ? (

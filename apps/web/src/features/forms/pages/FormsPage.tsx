@@ -12,7 +12,9 @@ type FormListItem = {
   code: string;
   status: string;
   layoutType: string;
+  description?: string | null;
   _count?: { sections: number; tabs: number; submissions: number };
+  linkedMenus?: Array<{ id: string; label: string; path: string | null }>;
 };
 
 type FormDetail = {
@@ -64,6 +66,9 @@ export function FormsPage() {
     controlType: 'TEXT',
     required: true,
   });
+  const [editMeta, setEditMeta] = useState({ name: '', description: '', status: 'DRAFT' });
+  const [editingControlId, setEditingControlId] = useState<string | null>(null);
+  const [editControlLabel, setEditControlLabel] = useState('');
 
   const canBuildForms =
     user?.isPlatformAdmin ||
@@ -114,6 +119,11 @@ export function FormsPage() {
     if (!id) return;
     const d = await orgApi<FormDetail>(`/forms/${id}`);
     setDetail(d);
+    setEditMeta({
+      name: d.name,
+      description: '',
+      status: d.status,
+    });
     const defaults: Record<string, string> = {};
     d.sections.forEach((s) =>
       s.controls.forEach((c) => {
@@ -163,6 +173,43 @@ export function FormsPage() {
       body: JSON.stringify({ status: 'PUBLISHED' }),
     });
     setMessage('Form published');
+    await loadDetail(detail.id);
+    await loadList();
+  }
+
+  async function saveFormMeta(e: FormEvent) {
+    e.preventDefault();
+    if (!detail) return;
+    await orgApi(`/forms/${detail.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: editMeta.name.trim(),
+        status: editMeta.status,
+      }),
+    });
+    setMessage('Form updated');
+    await loadDetail(detail.id);
+    await loadList();
+  }
+
+  async function saveControlLabel(controlId: string) {
+    const label = editControlLabel.trim();
+    if (!label || !detail) return;
+    await orgApi(`/forms/controls/${controlId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ label }),
+    });
+    setEditingControlId(null);
+    setMessage('Field updated');
+    await loadDetail(detail.id);
+    await loadList();
+  }
+
+  async function removeControl(controlId: string) {
+    if (!detail) return;
+    if (!window.confirm('Delete this field from the form?')) return;
+    await orgApi(`/forms/controls/${controlId}`, { method: 'DELETE' });
+    setMessage('Field deleted');
     await loadDetail(detail.id);
     await loadList();
   }
@@ -307,6 +354,68 @@ export function FormsPage() {
           {error && <div className="alert error">{error}</div>}
           {message && <div className="alert success">{message}</div>}
 
+          <section className="section-card" style={{ marginBottom: '1rem' }}>
+            <div className="section-card-head">
+              <h2>
+                Forms · {currentOrg.name}
+                <span className="muted" style={{ fontWeight: 400, marginLeft: '0.5rem' }}>
+                  ({forms.length} form{forms.length === 1 ? '' : 's'})
+                </span>
+              </h2>
+            </div>
+            <div className="section-card-body" style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Form</th>
+                    <th>Code</th>
+                    <th>Status</th>
+                    <th>Fields</th>
+                    <th>Linked menus</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {forms.map((f) => (
+                    <tr key={f.id} className={selectedId === f.id ? 'is-selected' : undefined}>
+                      <td>
+                        <strong>{f.name}</strong>
+                      </td>
+                      <td>
+                        <code>{f.code}</code>
+                      </td>
+                      <td>{f.status}</td>
+                      <td>{f._count?.sections ?? 0} sections</td>
+                      <td>
+                        {(f.linkedMenus?.length ?? 0) === 0 ? (
+                          <span className="muted">Not linked</span>
+                        ) : (
+                          f.linkedMenus!.map((m) => m.label).join(', ')
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn ghost sm"
+                          onClick={() => setSelectedId(f.id)}
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!forms.length && (
+                    <tr>
+                      <td colSpan={6} className="muted">
+                        No forms yet for this project.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
           <section className="section-card">
             <div className="section-card-body">
               <form className="auth-form compact" onSubmit={(e) => void onCreateForm(e)}>
@@ -367,6 +476,33 @@ export function FormsPage() {
                       {detail.sections.length}
                     </span>
                   </div>
+
+                  <form className="auth-form compact" onSubmit={(e) => void saveFormMeta(e)}>
+                    <h2>Update form</h2>
+                    <div className="row-2">
+                      <label>
+                        Name
+                        <input
+                          required
+                          value={editMeta.name}
+                          onChange={(e) => setEditMeta((m) => ({ ...m, name: e.target.value }))}
+                        />
+                      </label>
+                      <label>
+                        Status
+                        <select
+                          value={editMeta.status}
+                          onChange={(e) => setEditMeta((m) => ({ ...m, status: e.target.value }))}
+                        >
+                          <option value="DRAFT">DRAFT</option>
+                          <option value="PUBLISHED">PUBLISHED</option>
+                        </select>
+                      </label>
+                    </div>
+                    <button className="btn primary" type="submit">
+                      Save form
+                    </button>
+                  </form>
 
                   <form className="auth-form compact" onSubmit={(e) => void addTab(e)}>
                     <h2>Add tab</h2>
@@ -510,72 +646,126 @@ export function FormsPage() {
                               }}
                             >
                               {section.controls.map((c) => (
-                                <label key={c.id}>
-                                  {c.label}
-                                  {c.required ? ' *' : ''}
-                                  {c.controlType === 'TEXTAREA' ? (
-                                    <textarea
-                                      value={formValues[c.fieldKey] ?? ''}
-                                      onChange={(e) =>
-                                        setFormValues((v) => ({
-                                          ...v,
-                                          [c.fieldKey]: e.target.value,
-                                        }))
-                                      }
-                                    />
-                                  ) : c.controlType === 'SELECT' ? (
-                                    <select
-                                      value={formValues[c.fieldKey] ?? ''}
-                                      onChange={(e) =>
-                                        setFormValues((v) => ({
-                                          ...v,
-                                          [c.fieldKey]: e.target.value,
-                                        }))
-                                      }
-                                    >
-                                      <option value="">Select</option>
-                                      {(Array.isArray(c.options) ? c.options : []).map((opt, idx) => {
-                                        const o = opt as { label?: string; value?: string };
-                                        return (
-                                          <option key={idx} value={o.value ?? ''}>
-                                            {o.label ?? o.value}
-                                          </option>
-                                        );
-                                      })}
-                                    </select>
-                                  ) : c.controlType === 'CHECKBOX' ? (
-                                    <input
-                                      type="checkbox"
-                                      checked={formValues[c.fieldKey] === 'true'}
-                                      onChange={(e) =>
-                                        setFormValues((v) => ({
-                                          ...v,
-                                          [c.fieldKey]: e.target.checked ? 'true' : 'false',
-                                        }))
-                                      }
-                                    />
+                                <div key={c.id} className="form-control-edit">
+                                  {editingControlId === c.id ? (
+                                    <div className="row-2" style={{ alignItems: 'end' }}>
+                                      <label>
+                                        Field label
+                                        <input
+                                          value={editControlLabel}
+                                          onChange={(e) => setEditControlLabel(e.target.value)}
+                                        />
+                                      </label>
+                                      <div className="action-row">
+                                        <button
+                                          type="button"
+                                          className="btn primary sm"
+                                          onClick={() => void saveControlLabel(c.id)}
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn ghost sm"
+                                          onClick={() => setEditingControlId(null)}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
                                   ) : (
-                                    <input
-                                      type={
-                                        c.controlType === 'NUMBER'
-                                          ? 'number'
-                                          : c.controlType === 'EMAIL'
-                                            ? 'email'
-                                            : c.controlType === 'DATE'
-                                              ? 'date'
-                                              : 'text'
-                                      }
-                                      placeholder={c.placeholder ?? undefined}
-                                      value={formValues[c.fieldKey] ?? ''}
-                                      onChange={(e) =>
-                                        setFormValues((v) => ({
-                                          ...v,
-                                          [c.fieldKey]: e.target.value,
-                                        }))
-                                      }
-                                    />
+                                    <div className="action-row" style={{ marginBottom: '0.35rem' }}>
+                                      <strong>
+                                        {c.label}
+                                        {c.required ? ' *' : ''}
+                                      </strong>
+                                      <span className="muted tiny">{c.controlType}</span>
+                                      <button
+                                        type="button"
+                                        className="btn ghost sm"
+                                        onClick={() => {
+                                          setEditingControlId(c.id);
+                                          setEditControlLabel(c.label);
+                                        }}
+                                      >
+                                        Rename
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn ghost sm"
+                                        onClick={() => void removeControl(c.id)}
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
                                   )}
-                                </label>
+                                  <label>
+                                    {c.controlType === 'TEXTAREA' ? (
+                                      <textarea
+                                        value={formValues[c.fieldKey] ?? ''}
+                                        onChange={(e) =>
+                                          setFormValues((v) => ({
+                                            ...v,
+                                            [c.fieldKey]: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    ) : c.controlType === 'SELECT' ? (
+                                      <select
+                                        value={formValues[c.fieldKey] ?? ''}
+                                        onChange={(e) =>
+                                          setFormValues((v) => ({
+                                            ...v,
+                                            [c.fieldKey]: e.target.value,
+                                          }))
+                                        }
+                                      >
+                                        <option value="">Select</option>
+                                        {(Array.isArray(c.options) ? c.options : []).map(
+                                          (opt, idx) => {
+                                            const o = opt as { label?: string; value?: string };
+                                            return (
+                                              <option key={idx} value={o.value ?? ''}>
+                                                {o.label ?? o.value}
+                                              </option>
+                                            );
+                                          },
+                                        )}
+                                      </select>
+                                    ) : c.controlType === 'CHECKBOX' ? (
+                                      <input
+                                        type="checkbox"
+                                        checked={formValues[c.fieldKey] === 'true'}
+                                        onChange={(e) =>
+                                          setFormValues((v) => ({
+                                            ...v,
+                                            [c.fieldKey]: e.target.checked ? 'true' : 'false',
+                                          }))
+                                        }
+                                      />
+                                    ) : (
+                                      <input
+                                        type={
+                                          c.controlType === 'NUMBER'
+                                            ? 'number'
+                                            : c.controlType === 'EMAIL'
+                                              ? 'email'
+                                              : c.controlType === 'DATE'
+                                                ? 'date'
+                                                : 'text'
+                                        }
+                                        placeholder={c.placeholder ?? undefined}
+                                        value={formValues[c.fieldKey] ?? ''}
+                                        onChange={(e) =>
+                                          setFormValues((v) => ({
+                                            ...v,
+                                            [c.fieldKey]: e.target.value,
+                                          }))
+                                        }
+                                      />
+                                    )}
+                                  </label>
+                                </div>
                               ))}
                             </div>
                           </div>

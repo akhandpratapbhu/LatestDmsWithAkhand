@@ -19,6 +19,7 @@ import {
   CreateTabDto,
   CreateValidationDto,
   SubmitFormDto,
+  UpdateControlDto,
   UpdateFormDto,
 } from './dto/forms.dto';
 
@@ -51,6 +52,22 @@ export class FormsController {
     @Body() dto: CreateControlDto,
   ) {
     return this.forms.addControl(org.organizationId, sectionId, dto);
+  }
+
+  @Patch('controls/:controlId')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  updateControl(
+    @CurrentOrg() org: OrgContext,
+    @Param('controlId') controlId: string,
+    @Body() dto: UpdateControlDto,
+  ) {
+    return this.forms.updateControl(org.organizationId, controlId, dto);
+  }
+
+  @Delete('controls/:controlId')
+  @RequireOrgRoles(OrgRole.OWNER, OrgRole.ADMIN)
+  deleteControl(@CurrentOrg() org: OrgContext, @Param('controlId') controlId: string) {
+    return this.forms.deleteControl(org.organizationId, controlId);
   }
 
   @Post('controls/:controlId/validations')

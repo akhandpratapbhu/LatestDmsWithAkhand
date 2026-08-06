@@ -12,12 +12,14 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { ProjectDbService } from '../project-db/project-db.service';
 
 @Injectable()
 export class FormsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly projectDb: ProjectDbService,
   ) {}
 
   private formInclude = {
@@ -33,14 +35,47 @@ export class FormsService {
     },
   };
 
-  list(organizationId: string) {
-    return this.prisma.dynamicForm.findMany({
+  async list(organizationId: string) {
+    const forms = await this.prisma.dynamicForm.findMany({
       where: { organizationId },
       orderBy: { updatedAt: 'desc' },
       include: {
         _count: { select: { sections: true, tabs: true, submissions: true } },
       },
     });
+
+    const linkedByForm = new Map<
+      string,
+      Array<{ id: string; label: string; path: string | null }>
+    >();
+    const project = await this.projectDb.getClient(organizationId);
+    if (project) {
+      const menus = await project.menu.findMany({
+        where: {
+          organizationId,
+          formId: { not: null },
+          isActive: true,
+        },
+        select: { id: true, label: true, path: true, formId: true },
+        orderBy: { sortOrder: 'asc' },
+      });
+      for (const menu of menus as Array<{
+        id: string;
+        label: string;
+        path: string | null;
+        formId: string | null;
+      }>) {
+        if (!menu.formId) continue;
+        const list = linkedByForm.get(menu.formId) ?? [];
+        list.push({ id: menu.id, label: menu.label, path: menu.path });
+        linkedByForm.set(menu.formId, list);
+      }
+    }
+
+    return forms.map((form) => ({
+      ...form,
+      linkedMenus: linkedByForm.get(form.id) ?? [],
+    }));
   }
 
   async get(organizationId: string, id: string) {
@@ -213,6 +248,54 @@ export class FormsService {
       },
       include: { validations: true },
     });
+  }
+
+  async updateControl(
+    organizationId: string,
+    controlId: string,
+    data: Partial<{
+      label: string;
+      controlType: ControlType;
+      placeholder: string | null;
+      required: boolean;
+      options: unknown[];
+      sortOrder: number;
+    }>,
+  ) {
+    const control = await this.prisma.formControl.findUnique({
+      where: { id: controlId },
+      include: { section: { include: { form: true } } },
+    });
+    if (!control || control.section.form.organizationId !== organizationId) {
+      throw new NotFoundException('Control not found');
+    }
+    return this.prisma.formControl.update({
+      where: { id: controlId },
+      data: {
+        ...(data.label !== undefined ? { label: data.label } : {}),
+        ...(data.controlType !== undefined ? { controlType: data.controlType } : {}),
+        ...(data.placeholder !== undefined ? { placeholder: data.placeholder } : {}),
+        ...(data.required !== undefined ? { required: data.required } : {}),
+        ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+        ...(data.options !== undefined
+          ? { options: data.options as Prisma.InputJsonValue }
+          : {}),
+      },
+      include: { validations: true },
+    });
+  }
+
+  async deleteControl(organizationId: string, controlId: string) {
+    const control = await this.prisma.formControl.findUnique({
+      where: { id: controlId },
+      include: { section: { include: { form: true } } },
+    });
+    if (!control || control.section.form.organizationId !== organizationId) {
+      throw new NotFoundException('Control not found');
+    }
+    await this.prisma.formValidation.deleteMany({ where: { controlId } });
+    await this.prisma.formControl.delete({ where: { id: controlId } });
+    return { ok: true };
   }
 
   async addValidation(

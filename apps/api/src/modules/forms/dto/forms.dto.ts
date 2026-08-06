@@ -169,6 +169,32 @@ export class CreateControlDto {
   validations?: ValidationDto[];
 }
 
+export class UpdateControlDto {
+  @IsOptional()
+  @IsString()
+  label?: string;
+
+  @IsOptional()
+  @IsEnum(ControlType)
+  controlType?: ControlType;
+
+  @IsOptional()
+  @IsString()
+  placeholder?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  required?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  options?: unknown[];
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+}
+
 export class CreateValidationDto {
   @IsEnum(ValidationRuleType)
   ruleType!: ValidationRuleType;

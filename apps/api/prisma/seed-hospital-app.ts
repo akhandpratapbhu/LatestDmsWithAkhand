@@ -17,13 +17,14 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaClient as ProjectClient } from '@dms/project-client';
 import { seedHospitalRoleDashboards } from './seed-role-dashboards';
 
-const SLUG = 'hospital-management';
+const SLUG = (process.env.SEED_ORG_SLUG || 'hospital-management').trim();
 
 const REQUIRED_FEATURES = [
   'dashboard',
   'users',
   'roles',
   'forms',
+  'project-forms',
   'grids',
   'reports',
   'chat',

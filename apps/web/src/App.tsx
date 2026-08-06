@@ -393,16 +393,38 @@ export function App() {
             </RequireFeatureSubscription>
           }
         />
-        <Route path="data/:formId/new" element={<FormRecordFormPage mode="create" />} />
+        <Route
+          path="data/:formId/new"
+          element={
+            <RequireFeatureSubscription featureId="project-forms">
+              <FormRecordFormPage mode="create" />
+            </RequireFeatureSubscription>
+          }
+        />
         <Route
           path="data/:formId/:submissionId/edit"
-          element={<FormRecordFormPage mode="edit" />}
+          element={
+            <RequireFeatureSubscription featureId="project-forms">
+              <FormRecordFormPage mode="edit" />
+            </RequireFeatureSubscription>
+          }
         />
         <Route
           path="data/:formId/:submissionId"
-          element={<FormRecordFormPage mode="view" />}
+          element={
+            <RequireFeatureSubscription featureId="project-forms">
+              <FormRecordFormPage mode="view" />
+            </RequireFeatureSubscription>
+          }
         />
-        <Route path="data/:formId" element={<FormRecordsPage />} />
+        <Route
+          path="data/:formId"
+          element={
+            <RequireFeatureSubscription featureId="project-forms">
+              <FormRecordsPage />
+            </RequireFeatureSubscription>
+          }
+        />
         <Route path="grids" element={<GridsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route

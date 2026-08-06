@@ -542,9 +542,17 @@ export const PLATFORM_FEATURE_CATALOG: PlatformFeatureCatalogItem[] = [
   {
     id: 'forms',
     name: 'Forms',
-    description: 'Metadata-driven form builder.',
+    description: 'Metadata-driven form builder (Configure System / builders).',
     category: 'Builders',
     menuPaths: ['/app/forms'],
+  },
+  {
+    id: 'project-forms',
+    name: 'Application Forms',
+    description:
+      'Show all form-linked menus inside the project app. Install to reveal forms in the sidebar; uninstall to hide them. Displayed as “{Project} Forms”.',
+    category: 'Workspace',
+    menuPaths: [],
   },
   {
     id: 'grids',
@@ -721,6 +729,21 @@ export function getFeatureById(featureId: string): PlatformFeatureCatalogItem | 
   return PLATFORM_FEATURE_CATALOG.find((f) => f.id === featureId);
 }
 
+/**
+ * Display name for Features UI.
+ * `project-forms` → “{Project Name} Forms” (e.g. Divya Hospital Forms).
+ */
+export function displayFeatureName(
+  feature: Pick<PlatformFeatureCatalogItem, 'id' | 'name'>,
+  projectName?: string | null,
+): string {
+  if (feature.id === 'project-forms') {
+    const name = projectName?.trim();
+    return name ? `${name} Forms` : 'Application Forms';
+  }
+  return feature.name;
+}
+
 /** Catalog feature that owns a sidebar menu path (exact match). */
 export function getFeatureByMenuPath(path: string): PlatformFeatureCatalogItem | undefined {
   return PLATFORM_FEATURE_CATALOG.find((f) => f.menuPaths.includes(path));
@@ -797,7 +820,8 @@ export function isMenuPathAllowedForFeatures(
   if (!path) return false;
   const exact = menuPathsForFeatures(enabledFeatures);
   if (exact.has(path)) return true;
-  if (path.startsWith('/app/data/') && enabledFeatures.includes('forms')) return true;
+  // Form-linked app menus require the project-forms feature (shown as “{Project} Forms”).
+  if (path.startsWith('/app/data/') && enabledFeatures.includes('project-forms')) return true;
   return false;
 }
 

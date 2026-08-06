@@ -991,8 +991,8 @@ export class IamService {
       });
     }
 
-    // Form-linked menus (`/app/data/:formId`) are gated by the Forms feature.
-    if (featureId === 'forms') {
+    // Form-linked menus (`/app/data/:formId`) are gated by “{Project} Forms” (project-forms).
+    if (featureId === 'project-forms') {
       await db.menu.updateMany({
         where: { organizationId, path: { startsWith: '/app/data/' } },
         data: { isActive },

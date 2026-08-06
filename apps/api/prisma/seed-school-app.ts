@@ -24,6 +24,7 @@ const REQUIRED_FEATURES = [
   'users',
   'roles',
   'forms',
+  'project-forms',
   'grids',
   'reports',
   'chat',
